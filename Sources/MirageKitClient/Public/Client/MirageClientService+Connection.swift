@@ -203,9 +203,9 @@ public extension MirageClientService {
         resetControlPathHistory()
 
         var pendingChannel: MirageControlChannel?
-        let helloRequest = try makeSessionHelloRequest()
 
         do {
+            let helloRequest = try makeSessionHelloRequest()
             let bootstrappedSession = try await connectBootstrappedControlSession(
                 to: host,
                 hello: helloRequest,

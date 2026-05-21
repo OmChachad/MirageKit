@@ -1,0 +1,401 @@
+//
+//  LoomCloudKitManager.swift
+//  Loom
+//
+//  Created by Ethan Lipnik on 1/28/26.
+//
+//  Manages CloudKit operations for device registration and user identity.
+//
+
+import CloudKit
+import Combine
+import Foundation
+import Loom
+#if canImport(UIKit)
+import UIKit
+#endif
+
+/// Manages CloudKit operations for iCloud-based trust.
+///
+/// Handles device registration and user identity fetching for same-account peers.
+/// Initialize with a ``LoomCloudKitConfiguration`` to customize behavior.
+///
+/// ## Usage
+///
+/// ```swift
+/// let config = LoomCloudKitConfiguration(
+///     containerIdentifier: "iCloud.com.yourcompany.YourApp"
+/// )
+/// let manager = LoomCloudKitManager(configuration: config)
+/// await manager.initialize()
+/// ```
+///
+/// - Note: The `CKContainer` is created lazily during ``initialize()`` to prevent crashes
+///   when CloudKit is misconfigured or unavailable. Check ``isAvailable`` after initialization.
+@MainActor
+public final class LoomCloudKitManager: ObservableObject {
+    // MARK: - Properties
+
+    /// Configuration for CloudKit operations.
+    public let configuration: LoomCloudKitConfiguration
+
+    /// CloudKit container, created lazily during initialization.
+    public private(set) var container: CKContainer?
+
+    /// Current user's CloudKit record ID (recordName portion).
+    public private(set) var currentUserRecordID: String?
+
+    /// Whether CloudKit is available and the user is signed in.
+    public private(set) var isAvailable: Bool = false
+
+    /// Last error encountered during CloudKit operations.
+    public private(set) var lastError: Error?
+
+    /// Whether initial setup has completed.
+    public private(set) var isInitialized: Bool = false
+
+    // MARK: - Initialization
+
+    /// Creates a CloudKit manager with the specified configuration.
+    ///
+    /// - Parameter configuration: CloudKit configuration including container ID and record types.
+    /// - Note: The `CKContainer` is not created until ``initialize()`` is called.
+    public init(configuration: LoomCloudKitConfiguration) {
+        self.configuration = configuration
+    }
+
+    /// Creates a CloudKit manager with just a container identifier, using default settings.
+    ///
+    /// - Parameter containerIdentifier: CloudKit container identifier.
+    public convenience init(containerIdentifier: String) {
+        self.init(configuration: LoomCloudKitConfiguration(containerIdentifier: containerIdentifier))
+    }
+
+    // MARK: - Setup
+
+    /// Initializes CloudKit and fetches the current user's record ID.
+    ///
+    /// Call this early in your app's lifecycle to set up CloudKit.
+    /// This method creates the `CKContainer`, registers the current device,
+    /// and caches the user's identity.
+    ///
+    /// - Note: Container creation is deferred to this method to avoid crashes when
+    ///   CloudKit is misconfigured. If container creation fails, CloudKit features
+    ///   will be unavailable but the app will continue to function.
+    public func initialize() async {
+        guard !isInitialized else { return }
+
+        LoomLogger.cloud("CloudKit: Starting initialization for container '\(configuration.containerIdentifier)'")
+
+        // Create the container lazily to avoid crashes during app launch
+        // when CloudKit is misconfigured or unavailable
+        if container == nil {
+            do {
+                container = try createContainer()
+                LoomLogger.cloud("CloudKit: Container created successfully")
+            } catch {
+                lastError = error
+                isAvailable = false
+                isInitialized = true
+                LoomLogger.error(.cloud, error: error, message: "CloudKit container creation failed: ")
+                return
+            }
+        }
+
+        guard let container else {
+            LoomLogger.error(.cloud, "CloudKit: Container is nil after creation attempt")
+            isAvailable = false
+            isInitialized = true
+            return
+        }
+
+        do {
+            // Check account status
+            LoomLogger.cloud("CloudKit: Checking account status...")
+            let status = try await container.accountStatus()
+            LoomLogger.cloud("CloudKit: Account status = \(Self.describeAccountStatus(status))")
+
+            switch status {
+            case .available:
+                isAvailable = true
+                LoomLogger.cloud("CloudKit: Account available, proceeding with setup")
+
+            case .noAccount:
+                isAvailable = false
+                LoomLogger.cloud("CloudKit: No iCloud account signed in - iCloud features disabled")
+                isInitialized = true
+                return
+
+            case .restricted:
+                isAvailable = false
+                LoomLogger.cloud("CloudKit: Account restricted (parental controls or MDM)")
+                isInitialized = true
+                return
+
+            case .couldNotDetermine:
+                isAvailable = false
+                LoomLogger.cloud("CloudKit: Could not determine account status")
+                isInitialized = true
+                return
+
+            case .temporarilyUnavailable:
+                isAvailable = false
+                LoomLogger.cloud("CloudKit: Account temporarily unavailable")
+                isInitialized = true
+                return
+
+            @unknown default:
+                isAvailable = false
+                LoomLogger.cloud("CloudKit: Unknown account status")
+                isInitialized = true
+                return
+            }
+
+            // Fetch current user's record ID
+            LoomLogger.cloud("CloudKit: Fetching user record ID...")
+            let userRecordID = try await container.userRecordID()
+            currentUserRecordID = userRecordID.recordName
+            LoomLogger.cloud("CloudKit: User record ID = \(userRecordID.recordName)")
+
+            // Register this device
+            LoomLogger.cloud("CloudKit: Registering current device...")
+            await registerCurrentDevice()
+
+            isInitialized = true
+            LoomLogger.cloud("CloudKit: Initialization complete")
+        } catch {
+            lastError = error
+            isAvailable = false
+            isInitialized = true
+            LoomLogger.error(.cloud, error: error, message: "CloudKit initialization failed: ")
+            if let ckError = error as? CKError {
+                LoomLogger.debug(.cloud,
+                    "CloudKit initialization detail code=\(ckError.code.rawValue), userInfo=\(ckError.userInfo)"
+                )
+            }
+        }
+    }
+
+    /// Creates a CKContainer with error handling.
+    ///
+    /// - Throws: An error if the container cannot be created (e.g., invalid identifier,
+    ///   missing entitlements, or provisioning mismatch).
+    /// - Returns: The created CKContainer.
+    private func createContainer() throws -> CKContainer {
+        // CKContainer(identifier:) can crash synchronously if the container
+        // is misconfigured. We wrap it in a do-catch to handle potential
+        // runtime issues, though note that some failures may still trap.
+        // The main protection is deferring this call until after app launch.
+        CKContainer(identifier: configuration.containerIdentifier)
+    }
+
+    /// Reinitializes CloudKit after an account change.
+    ///
+    /// Call this when you detect an iCloud account change to refresh
+    /// the user identity and device registration.
+    public func reinitialize() async {
+        isInitialized = false
+        currentUserRecordID = nil
+        isAvailable = false
+        await initialize()
+    }
+
+    // MARK: - Device Registration
+
+    /// Registers the current device in the user's private CloudKit database.
+    private func registerCurrentDevice() async {
+        guard isAvailable, let container else { return }
+
+        let deviceInfo = Self.currentDeviceRegistrationInfo()
+        let deviceName = deviceInfo.name
+        let deviceType = deviceInfo.deviceType
+
+        // Use a stable device identifier
+        let deviceID = getOrCreateDeviceID()
+
+        let recordID = CKRecord.ID(recordName: deviceID.uuidString)
+        let record = CKRecord(recordType: configuration.deviceRecordType, recordID: recordID)
+        record["name"] = deviceName
+        record["deviceType"] = deviceType
+        record["lastSeen"] = Date()
+
+        do {
+            let database = container.privateCloudDatabase
+            _ = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .changedKeys)
+            LoomLogger.cloud("Registered device in CloudKit: \(deviceName)")
+        } catch {
+            // Don't treat registration failures as critical
+            LoomLogger.error(.cloud, error: error, message: "Failed to register device in CloudKit: ")
+        }
+    }
+
+    nonisolated package static func currentDeviceRegistrationInfo() -> (name: String, deviceType: String) {
+        #if os(macOS)
+        return (
+            name: Host.current().localizedName ?? "Mac",
+            deviceType: "mac"
+        )
+        #elseif os(iOS)
+        return (
+            name: UIDevice.current.name,
+            deviceType: UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        )
+        #elseif os(visionOS)
+        return (
+            name: "Apple Vision Pro",
+            deviceType: "vision"
+        )
+        #else
+        return (
+            name: "Unknown Device",
+            deviceType: "unknown"
+        )
+        #endif
+    }
+
+    /// Returns a stable device identifier, creating one if needed.
+    private func getOrCreateDeviceID() -> UUID {
+        LoomSharedDeviceID.getOrCreate(
+            suiteName: configuration.deviceIDSuiteName,
+            key: configuration.deviceIDKey
+        )
+    }
+
+    /// Registers the current device identity key metadata in the private device record.
+    public func registerIdentity(keyID: String, publicKey: Data) async {
+        guard isAvailable, let container else { return }
+        let recordID = CKRecord.ID(recordName: getOrCreateDeviceID().uuidString)
+        let record = CKRecord(recordType: configuration.deviceRecordType, recordID: recordID)
+        record["identityKeyID"] = keyID
+        record["identityPublicKey"] = publicKey
+        record["lastSeen"] = Date()
+
+        do {
+            _ = try await container.privateCloudDatabase.modifyRecords(
+                saving: [record],
+                deleting: [],
+                savePolicy: .changedKeys
+            )
+        } catch {
+            LoomLogger.error(.cloud, error: error, message: "Failed to register identity in CloudKit: ")
+        }
+    }
+
+    /// Checks whether the current account has published the provided peer identity.
+    public func isPublishedPeerIdentityTrusted(
+        deviceID: UUID,
+        keyID: String,
+        publicKey: Data
+    ) async -> Bool {
+        guard isAvailable, let container else { return false }
+
+        let recordID = CKRecord.ID(recordName: deviceID.uuidString)
+
+        for attempt in 0...Self.sameAccountIdentityVerificationRetryDelays.count {
+            do {
+                let record = try await container.privateCloudDatabase.record(for: recordID)
+                if let publishedKeyID = record["identityKeyID"] as? String,
+                   let publishedPublicKey = record["identityPublicKey"] as? Data,
+                   publishedKeyID == keyID,
+                   publishedPublicKey == publicKey {
+                    return true
+                }
+
+                guard let retryDelay = Self.sameAccountIdentityVerificationRetryDelay(afterAttempt: attempt) else {
+                    LoomLogger.cloud(
+                        "Same-account published identity did not match authenticated identity for device \(deviceID.uuidString)"
+                    )
+                    return false
+                }
+
+                do {
+                    try await Task.sleep(for: retryDelay)
+                } catch {
+                    return false
+                }
+            } catch {
+                if Self.isMissingPublishedIdentityLookupError(error) {
+                    guard let retryDelay = Self.sameAccountIdentityVerificationRetryDelay(afterAttempt: attempt) else {
+                        LoomLogger.cloud("Same-account published identity not found for device \(deviceID.uuidString)")
+                        return false
+                    }
+
+                    do {
+                        try await Task.sleep(for: retryDelay)
+                    } catch {
+                        return false
+                    }
+                    continue
+                }
+
+                LoomLogger.error(.cloud, error: error, message: "Failed to verify same-account published identity: ")
+                return false
+            }
+        }
+
+        return false
+    }
+
+    // MARK: - Account Change Handling
+
+    /// Handles iCloud account changes by reinitializing.
+    ///
+    /// Call this from your app's account change notification handler.
+    public func handleAccountChange() async {
+        LoomLogger.cloud("iCloud account changed, reinitializing CloudKit")
+        await reinitialize()
+    }
+}
+
+// MARK: - Helpers
+
+extension LoomCloudKitManager {
+    private nonisolated static let sameAccountIdentityVerificationRetryDelays: [Duration] = [
+        .milliseconds(200),
+        .milliseconds(400),
+        .milliseconds(800),
+    ]
+
+    nonisolated static func isMissingPublishedIdentityLookupError(_ error: any Error) -> Bool {
+        isMissingPublishedIdentityLookupError(error as NSError)
+    }
+
+    private nonisolated static func isMissingPublishedIdentityLookupError(_ error: NSError) -> Bool {
+        if error.domain == CKError.errorDomain && error.code == CKError.unknownItem.rawValue {
+            return true
+        }
+
+        if let underlyingError = error.userInfo[NSUnderlyingErrorKey] as? NSError,
+           isMissingPublishedIdentityLookupError(underlyingError) {
+            return true
+        }
+
+        if let partialErrors = error.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Any] {
+            for value in partialErrors.values {
+                guard let nestedError = value as? NSError else { continue }
+                if isMissingPublishedIdentityLookupError(nestedError) {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    nonisolated static func sameAccountIdentityVerificationRetryDelay(afterAttempt attempt: Int) -> Duration? {
+        guard sameAccountIdentityVerificationRetryDelays.indices.contains(attempt) else { return nil }
+        return sameAccountIdentityVerificationRetryDelays[attempt]
+    }
+
+    /// Returns a human-readable description of a CloudKit account status.
+    static func describeAccountStatus(_ status: CKAccountStatus) -> String {
+        switch status {
+        case .available: return "available"
+        case .noAccount: return "noAccount"
+        case .restricted: return "restricted"
+        case .couldNotDetermine: return "couldNotDetermine"
+        case .temporarilyUnavailable: return "temporarilyUnavailable"
+        @unknown default: return "unknown(\(status.rawValue))"
+        }
+    }
+}

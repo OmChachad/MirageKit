@@ -1,0 +1,43 @@
+@Tutorial(time: 15) {
+    @Intro(title: "Share a Mac Host Across Apps") {
+        In this tutorial, you will configure the `LoomHost` runtime so multiple Loom-based macOS apps in one App Group share a single network owner.
+
+        The important architectural move is to keep app identity and host identity separate. The shared runtime owns discovery, signaling presence, and authenticated transport, while each app still contributes its own app-scoped metadata through the host catalog.
+    }
+
+    @Section(title: "Define the App Group boundary") {
+        @ContentAndMedia {
+            Start by describing the App Group and the app-specific identity that should appear in the shared host catalog.
+        }
+
+        @Steps {
+            @Step {
+                Create a `LoomSharedHostConfiguration` with the App Group identifier and a `LoomHostAppDescriptor` for the current app.
+                @Code(name: "SharedHostConfiguration.swift", file: ShareAMacHostAcrossApps-SharedHostConfiguration.swift)
+            }
+
+            @Step {
+                Keep app metadata compact and versioned. The host catalog should answer discovery questions, not carry product state.
+                @Code(name: "SharedHostConfiguration.swift", file: ShareAMacHostAcrossApps-SharedHostConfiguration.swift)
+            }
+        }
+    }
+
+    @Section(title: "Opt LoomKit into the shared runtime") {
+        @ContentAndMedia {
+            Once the shared-host configuration exists, pass it into your LoomKit container. On macOS, LoomKit will use `LoomHostClient` behind the scenes and fall back to standalone behavior if the shared runtime is unavailable.
+        }
+
+        @Steps {
+            @Step {
+                Provide the shared-host configuration through `LoomContainerConfiguration`.
+                @Code(name: "ContainerConfiguration.swift", file: ShareAMacHostAcrossApps-ContainerConfiguration.swift)
+            }
+
+            @Step {
+                Keep app-facing APIs unchanged above this boundary. Contexts, queries, and connection handles should remain app-shaped even though the underlying host is shared.
+                @Code(name: "ContainerConfiguration.swift", file: ShareAMacHostAcrossApps-ContainerConfiguration.swift)
+            }
+        }
+    }
+}

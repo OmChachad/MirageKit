@@ -157,7 +157,7 @@ public extension MirageStreamContentView {
                     .allowsHitTesting(false)
             }
         }
-        .onChange(of: sessionStore.sessionMinSizes[session.id]) {
+        .onChange(of: sessionStore.sessionMinSizes[session.id]) { _ in
             guard !isDesktopStream else { return }
             Task { @MainActor in
                 await Task.yield()
@@ -169,7 +169,7 @@ public extension MirageStreamContentView {
                 handleResizeAcknowledgement(sessionStore.sessionMinSizes[session.id])
             }
         }
-        .onChange(of: sessionStore.sessionMinSizeUpdateGenerations[session.id]) {
+        .onChange(of: sessionStore.sessionMinSizeUpdateGenerations[session.id]) { _ in
             guard !isDesktopStream else { return }
             Task { @MainActor in
                 await Task.yield()
@@ -181,7 +181,7 @@ public extension MirageStreamContentView {
                 handleResizeAcknowledgement(sessionStore.sessionMinSizes[session.id])
             }
         }
-        .onChange(of: appStreamStartAcknowledgement) {
+        .onChange(of: appStreamStartAcknowledgement) { _ in
             Task { @MainActor in
                 await Task.yield()
                 handleAppStreamStartAcknowledgement(
@@ -189,7 +189,7 @@ public extension MirageStreamContentView {
                 )
             }
         }
-        .onChange(of: awaitingPostResizeFirstFrame) {
+        .onChange(of: awaitingPostResizeFirstFrame) { _ in
             updatePresentationBlurProgressMonitoring()
             guard isDesktopStream, !awaitingPostResizeFirstFrame else { return }
             Task { @MainActor in
@@ -197,7 +197,7 @@ public extension MirageStreamContentView {
                 clientService.handleDesktopPresentationReady(streamID: session.streamID)
             }
         }
-        .onChange(of: session.hasPresentedFrame) {
+        .onChange(of: session.hasPresentedFrame) { _ in
             updatePresentationBlurProgressMonitoring()
             guard isDesktopStream, session.hasPresentedFrame else { return }
             Task { @MainActor in
@@ -205,45 +205,31 @@ public extension MirageStreamContentView {
                 clientService.handleDesktopPresentationReady(streamID: session.streamID)
             }
         }
-        .onChange(of: session.clientRecoveryStatus) {
+        .onChange(of: session.clientRecoveryStatus) { _ in
             updateRecoveryBlurDebounceState()
             updatePresentationBlurProgressMonitoring()
         }
-        .onChange(of: rawPresentationBlurRadius) {
+        .onChange(of: rawPresentationBlurRadius) { _ in
             updatePresentationBlurProgressMonitoring()
         }
-        .onChange(of: maxDrawableSize) {
-            guard isDesktopStream else { return }
-            scheduleDesktopResizeForCurrentMetricsIfNeeded()
+        .onChange(of: maxDrawableSize) { _ in
+            handleDesktopSizingPreferenceChanged()
         }
-        .onChange(of: useHostResolution) {
-            guard isDesktopStream else { return }
-            scheduleDesktopResizeForCurrentMetricsIfNeeded()
+        .onChange(of: useHostResolution) { _ in
+            handleDesktopSizingPreferenceChanged()
         }
-        .onChange(of: localKeyboardOcclusionActive) {
+        .onChange(of: localKeyboardOcclusionActive) { _ in
             guard localKeyboardOcclusionActive else { return }
             cancelPendingWindowDrivenResizeForLocalPresentation()
         }
-        .onChange(of: isCurrentStreamActive) {
-            guard isCurrentStreamActive else { return }
-            Task { @MainActor in
-                await Task.yield()
-                focusCurrentStreamForInputIfNeeded()
-            }
+        .onChange(of: isCurrentStreamActive) { _ in
+            handleCurrentStreamActiveChanged()
         }
         .onAppear {
-            updateRecoveryBlurDebounceState()
-            updatePresentationBlurProgressMonitoring()
-            Task { @MainActor in
-                await Task.yield()
-                focusCurrentStreamForInputIfNeeded(force: true)
-            }
+            handleStreamContentAppear()
         }
         .onDisappear {
-            Task { @MainActor in
-                await Task.yield()
-                handleStreamContentDisappear()
-            }
+            scheduleStreamContentDisappear()
         }
         #if os(iOS)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
@@ -276,6 +262,29 @@ public extension MirageStreamContentView {
 }
 
 private extension MirageStreamContentView {
+    func handleStreamContentAppear() {
+        updateRecoveryBlurDebounceState()
+        updatePresentationBlurProgressMonitoring()
+        scheduleFocusForInputIfNeeded(force: true)
+    }
+
+    func handleCurrentStreamActiveChanged() {
+        guard isCurrentStreamActive else { return }
+        scheduleFocusForInputIfNeeded()
+    }
+
+    func handleDesktopSizingPreferenceChanged() {
+        guard isDesktopStream else { return }
+        scheduleDesktopResizeForCurrentMetricsIfNeeded()
+    }
+
+    func scheduleStreamContentDisappear() {
+        Task { @MainActor in
+            await Task.yield()
+            handleStreamContentDisappear()
+        }
+    }
+
     /// Clears transient resize, focus, and renderer state when the stream view leaves the hierarchy.
     func handleStreamContentDisappear() {
         resizeHoldoffTask?.cancel()

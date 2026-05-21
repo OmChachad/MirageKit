@@ -12,7 +12,7 @@ import PackageDescription
 let package = Package(
     name: "MirageKit",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v13),
         .iOS("17.4"),
         .visionOS(.v26),
     ],
@@ -39,7 +39,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/EthanLipnik/Loom.git", exact: "1.8.18"),
+        .package(path: "Dependencies/Loom"),
     ],
     targets: [
         .target(

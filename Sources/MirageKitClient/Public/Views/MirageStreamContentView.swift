@@ -36,11 +36,13 @@ public struct MirageStreamContentView: View {
     #endif
 
     /// Stream session rendered by this content view.
-    public let session: MirageStreamSessionState
+    @ObservedObject public var session: MirageStreamSessionState
     /// Store that owns decoded frames, cursor state, focus, and resize state for active streams.
-    public let sessionStore: MirageClientSessionStore
+    @ObservedObject public var sessionStore: MirageClientSessionStore
     /// Client service used to send input, resize, dictation, and action messages.
-    public let clientService: MirageClientService
+    @ObservedObject public var clientService: MirageClientService
+    /// Shared desktop resize state owned by the client service.
+    @ObservedObject var desktopResizeCoordinator: DesktopResizeCoordinator
     /// Whether the session represents desktop streaming rather than app/window streaming.
     public let isDesktopStream: Bool
     /// Desktop stream mode when `isDesktopStream` is true.
@@ -201,6 +203,7 @@ public struct MirageStreamContentView: View {
         self.session = session
         self.sessionStore = sessionStore
         self.clientService = clientService
+        self.desktopResizeCoordinator = clientService.desktopResizeCoordinator
         self.isDesktopStream = isDesktopStream
         self.desktopStreamMode = desktopStreamMode
         self.desktopCursorPresentation = desktopCursorPresentation
@@ -413,6 +416,13 @@ extension MirageStreamContentView {
         clientService.sendInputFireAndForget(.windowFocus, forStream: session.streamID)
     }
 
+    func scheduleFocusForInputIfNeeded(force: Bool = false) {
+        Task { @MainActor in
+            await Task.yield()
+            focusCurrentStreamForInputIfNeeded(force: force)
+        }
+    }
+
     /// Whether the stream has produced enough frame state to hide the initial black loading cover.
     var isReadyForInitialPresentation: Bool {
         switch streamPresentationTier {
@@ -426,11 +436,6 @@ extension MirageStreamContentView {
     /// Whether the stream is waiting for the first decoded frame after a desktop resize.
     var awaitingPostResizeFirstFrame: Bool {
         sessionStore.postResizeAwaitingFirstFrameStreamIDs.contains(session.streamID)
-    }
-
-    /// Shared desktop resize coordinator owned by the client service.
-    var desktopResizeCoordinator: DesktopResizeCoordinator {
-        clientService.desktopResizeCoordinator
     }
 
     /// Blur applied while desktop resize recovery masks unstable frame presentation.

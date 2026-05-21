@@ -5,14 +5,13 @@
 //  Created by Ethan Lipnik on 4/13/26.
 //
 
+import Combine
 import CoreGraphics
 import Foundation
 import MirageKit
-import Observation
 
-@Observable
 @MainActor
-final class DesktopResizeCoordinator {
+final class DesktopResizeCoordinator: ObservableObject {
     enum DispatchPolicy: Equatable {
         case startup
         case immediate
@@ -99,20 +98,20 @@ final class DesktopResizeCoordinator {
         let target: RequestGeometry
     }
 
-    var resizeLifecycleState: DesktopResizeLifecycleState = .active
-    var isResizing = false
-    var maskActive = false
-    var latestContainerDisplaySize: CGSize = .zero
-    var latestDrawableViewSize: CGSize = .zero
-    var latestRequestedTarget: RequestGeometry?
-    var latestRequestedDispatchPolicy: DispatchPolicy?
-    var queuedTarget: RequestGeometry?
-    var queuedDispatchPolicy: DispatchPolicy?
-    var lastSentTarget: RequestGeometry?
-    var activeTransition: ActiveTransition?
-    @ObservationIgnored var displayResolutionTask: Task<Void, Never>?
-    @ObservationIgnored var resizeHoldoffTask: Task<Void, Never>?
-    @ObservationIgnored var presentationMaskTimeoutTask: Task<Void, Never>?
+    @Published var resizeLifecycleState: DesktopResizeLifecycleState = .active
+    @Published var isResizing = false
+    @Published var maskActive = false
+    @Published var latestContainerDisplaySize: CGSize = .zero
+    @Published var latestDrawableViewSize: CGSize = .zero
+    @Published var latestRequestedTarget: RequestGeometry?
+    @Published var latestRequestedDispatchPolicy: DispatchPolicy?
+    @Published var queuedTarget: RequestGeometry?
+    @Published var queuedDispatchPolicy: DispatchPolicy?
+    @Published var lastSentTarget: RequestGeometry?
+    @Published var activeTransition: ActiveTransition?
+    var displayResolutionTask: Task<Void, Never>?
+    var resizeHoldoffTask: Task<Void, Never>?
+    var presentationMaskTimeoutTask: Task<Void, Never>?
 
     func beginTransition(streamID: StreamID, transitionID: UUID, target: RequestGeometry) {
         activeTransition = ActiveTransition(streamID: streamID, transitionID: transitionID, target: target)

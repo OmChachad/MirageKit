@@ -5,14 +5,13 @@
 //  Created by Ethan Lipnik on 5/12/26.
 //
 
+import Combine
 import Foundation
 import MirageKit
-import Observation
 
 /// Observable state for one logical stream session in the client UI.
-@Observable
 @MainActor
-public final class MirageStreamSessionState: Identifiable {
+public final class MirageStreamSessionState: Identifiable, ObservableObject {
     /// Stable UI identity for this stream session.
     public let id: StreamSessionID
 
@@ -23,7 +22,7 @@ public final class MirageStreamSessionState: Identifiable {
     public let mediaStreamID: StreamID
 
     /// Latest host window metadata associated with the stream.
-    public var window: MirageWindow
+    @Published public var window: MirageWindow
 
     /// Display name of the host that owns the stream.
     public let hostName: String
@@ -38,25 +37,25 @@ public final class MirageStreamSessionState: Identifiable {
     public let logicalTarget: MirageStreamLogicalTarget
 
     /// Current atlas placement for multi-window app streams.
-    public var atlasRegion: MirageAppAtlasRegion?
+    @Published public var atlasRegion: MirageAppAtlasRegion?
 
     /// Latest stream statistics received from the host.
-    public var statistics: MirageStreamStatistics?
+    @Published public var statistics: MirageStreamStatistics?
 
     /// Client-side recovery state surfaced to stream UI.
-    public var clientRecoveryStatus: MirageStreamClientRecoveryStatus
+    @Published public var clientRecoveryStatus: MirageStreamClientRecoveryStatus
 
     /// Whether the decoder has produced at least one frame for this session.
-    public var hasDecodedFrame: Bool
+    @Published public var hasDecodedFrame: Bool
 
     /// Whether the renderer has presented at least one frame for this session.
-    public var hasPresentedFrame: Bool
+    @Published public var hasPresentedFrame: Bool
 
     /// Minimum window width in points, as reported by the host.
-    public var minWidth: CGFloat = 400
+    @Published public var minWidth: CGFloat = 400
 
     /// Minimum window height in points, as reported by the host.
-    public var minHeight: CGFloat = 300
+    @Published public var minHeight: CGFloat = 300
 
     /// Creates active stream session state for the client session store.
     public init(

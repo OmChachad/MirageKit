@@ -33,6 +33,9 @@ public extension MirageClientService {
     )
     async throws {
         guard case .connected = connectionState else { throw MirageError.protocolError("Not connected") }
+        guard desktopStreamID == nil, pendingStreamSetupKind != .desktop else {
+            throw MirageError.protocolError("Desktop stream already active")
+        }
         await cancelActiveQualityTest(
             reason: "interactive desktop stream startup",
             notifyHost: true
@@ -46,7 +49,7 @@ public extension MirageClientService {
         guard effectiveDisplayResolution.width > 0, effectiveDisplayResolution.height > 0 else {
             throw MirageError.protocolError("Invalid display resolution")
         }
-        let targetFrameRate = screenMaxRefreshRate
+        let targetFrameRate = Self.normalizedDesktopStreamFrameRate(screenMaxRefreshRate)
         desktopStreamMode = mode
         desktopCursorPresentation = cursorPresentation
 
@@ -255,6 +258,14 @@ public extension MirageClientService {
 }
 
 extension MirageClientService {
+    private static let minimumInteractiveDesktopFrameRate = 30
+
+    private static func normalizedDesktopStreamFrameRate(_ frameRate: Int) -> Int {
+        MirageRenderModePolicy.normalizedTargetFPS(
+            max(minimumInteractiveDesktopFrameRate, frameRate)
+        )
+    }
+
     func hasDesktopStreamRestartBudget(streamID: StreamID) -> Bool {
         desktopStreamID == streamID &&
             lastDesktopStreamStartRequest != nil &&
