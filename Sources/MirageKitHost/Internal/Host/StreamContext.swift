@@ -102,6 +102,7 @@ actor StreamContext {
     var metricsUpdateHandler: (@Sendable (StreamMetricsMessage) -> Void)?
     var captureStallStageHandler: (@Sendable (CaptureStreamOutput.StallStage) -> Void)?
     var captureCadenceRecoveryPolicy = HostCaptureCadenceRecoveryPolicy()
+    var screenCaptureDeliveryRecovery = ScreenCaptureDeliveryRecovery()
     var activeQuality: Float
     var qualityFloor: Float
     var qualityCeiling: Float
@@ -149,6 +150,12 @@ actor StreamContext {
     var startupBitrate: Int?
     var ultraValidationFailureHandled = false
     var ultraValidationSuccessLogged = false
+    var rateControlRetuneValidationTask: Task<Void, Never>?
+    var rateControlRetuneValidationID: UInt64 = 0
+    var rateControlRetuneValidationResult: String?
+    var keyframeForRetuneCount: UInt64 = 0
+    var encoderSessionRecreationCount: UInt64 = 0
+    var adaptiveStreamScaleReason: String?
 
     // Pipeline throughput metrics (interval counters)
     var captureIngressIntervalCount: UInt64 = 0
@@ -242,6 +249,8 @@ actor StreamContext {
     let startupKeyframeFECBlockSize: Int = 4
     var lastKeyframeRequestTime: CFAbsoluteTime = 0
     var keyframeSendDeadline: CFAbsoluteTime = 0
+    var recentKeyframeRequestTimes: [CFAbsoluteTime] = []
+    var dependencyRecoveryKeyframeRetryTask: Task<Void, Never>?
 
     /// Scheduled keyframe cadence derived from keyFrameInterval/currentFrameRate.
     var keyframeIntervalSeconds: CFAbsoluteTime = 0
@@ -266,6 +275,8 @@ actor StreamContext {
 
     /// Frame rate for cadence and queue limits
     nonisolated(unsafe) var currentFrameRate: Int
+    /// Bitrate snapshot read from encoder callbacks for packet pacing policy.
+    nonisolated(unsafe) var currentTargetBitrateBps: Int?
     /// Effective capture cadence reported by ScreenCaptureKit.
     var captureFrameRate: Int
     /// Optional override for capture frame rate.
@@ -302,6 +313,8 @@ actor StreamContext {
     let latencyMode: MirageStreamLatencyMode
     /// Host-side capture-to-encode buffering preference.
     let hostBufferingPolicy: MirageHostBufferingPolicy
+    /// Classified transport path used for proximity-specific media policy.
+    let transportPathKind: MirageNetworkPathKind
     /// When true, force low-latency buffering regardless of overrides.
     let useLowLatencyPipeline: Bool
     /// Client-requested stream scale.
@@ -342,8 +355,9 @@ actor StreamContext {
         disableResolutionCap: Bool = false,
         encoderLowPowerEnabled: Bool = false,
         capturePressureProfile: WindowCaptureEngine.CapturePressureProfile = .baseline,
-        latencyMode: MirageStreamLatencyMode = .lowestLatency,
+        latencyMode: MirageStreamLatencyMode = .balanced,
         hostBufferingPolicy: MirageHostBufferingPolicy = .stability,
+        transportPathKind: MirageNetworkPathKind = .unknown,
         enteredBitrate: Int? = nil,
         bitrateAdaptationCeiling: Int? = nil,
         encoderMaxWidth: Int? = nil,
@@ -364,6 +378,7 @@ actor StreamContext {
         self.encoderConfig = resolvedEncoderConfig
         self.latencyMode = latencyMode
         self.hostBufferingPolicy = hostBufferingPolicy
+        self.transportPathKind = transportPathKind
         let clampedScale = StreamContext.clampStreamScale(streamScale)
         self.streamScale = clampedScale
         requestedStreamScale = clampedScale
@@ -375,6 +390,7 @@ actor StreamContext {
         mediaMaxPacketSize = maxPacketSize
         self.mediaSecurityContext = mediaSecurityContext
         currentFrameRate = resolvedEncoderConfig.targetFrameRate
+        currentTargetBitrateBps = resolvedEncoderConfig.bitrate
         captureFrameRateOverride = nil
         captureFrameRate = resolvedEncoderConfig.targetFrameRate
         self.runtimeQualityAdjustmentEnabled = runtimeQualityAdjustmentEnabled

@@ -63,9 +63,15 @@ final class MirageRenderStreamStore: @unchecked Sendable {
             presentationTime: presentationTime,
             remotePresentationTime: remotePresentationTime
         )
-        state.pendingFrames.append(frame)
         let now = CFAbsoluteTimeGetCurrent()
-        overwrittenPendingFrames = trimPendingFramesToCapacityLocked(state: state, now: now)
+        let trimResult = state.presentationController.enqueue(
+            frame,
+            into: &state.pendingFrames,
+            policy: presentationLatencyPolicyLocked(state: state, now: now),
+            now: now
+        )
+        recordPendingFrameTrimLocked(trimResult, state: state)
+        overwrittenPendingFrames = trimResult.overwrittenPendingFrames
         appendSampleLocked(now, samples: &state.decodeSamples, startIndex: &state.decodeSampleStartIndex)
         recordPendingQueueSampleLocked(state: state, now: now)
         listeners = activeListenersLocked(state: state)
@@ -115,9 +121,21 @@ final class MirageRenderStreamStore: @unchecked Sendable {
                 queueAgeMs: max(0, CFAbsoluteTimeGetCurrent() - decodeTime) * 1000
             )
         )
-        state.pendingFrames.append(frame)
         let now = CFAbsoluteTimeGetCurrent()
-        let overwrittenPendingFrames = trimPendingFramesToCapacityLocked(state: state, now: now)
+        resetPresentationEpochIfMetadataChangedLocked(
+            state: state,
+            hostEpoch: hostEpoch,
+            dimensionToken: dimensionToken,
+            now: now
+        )
+        let trimResult = state.presentationController.enqueue(
+            frame,
+            into: &state.pendingFrames,
+            policy: presentationLatencyPolicyLocked(state: state, now: now),
+            now: now
+        )
+        recordPendingFrameTrimLocked(trimResult, state: state)
+        let overwrittenPendingFrames = trimResult.overwrittenPendingFrames
         appendSampleLocked(now, samples: &state.decodeSamples, startIndex: &state.decodeSampleStartIndex)
         recordPendingQueueSampleLocked(state: state, now: now)
         listeners = activeListenersLocked(state: state)
@@ -203,8 +221,47 @@ final class MirageRenderStreamStore: @unchecked Sendable {
         state.lock.lock()
         let count = state.pendingFrames.count
         state.pendingFrames.removeAll(keepingCapacity: false)
+        state.presentationController.resetPresentationEpoch(
+            policy: presentationLatencyPolicyLocked(state: state),
+            now: CFAbsoluteTimeGetCurrent()
+        )
         state.lock.unlock()
         return count
+    }
+
+    /// Resets local playout state after presentation recovery while retaining stream identity.
+    @discardableResult
+    func resetPresentation(
+        for streamID: StreamID,
+        dropPendingFrames: Bool,
+        reason: String
+    ) -> Int {
+        guard let state = streamStateIfPresent(for: streamID) else { return 0 }
+        let now = CFAbsoluteTimeGetCurrent()
+        state.lock.lock()
+        let droppedFrameCount: Int
+        if dropPendingFrames {
+            droppedFrameCount = state.pendingFrames.count
+            state.pendingFrames.removeAll(keepingCapacity: false)
+        } else {
+            droppedFrameCount = 0
+        }
+        state.presentationController.resetPresentationEpoch(
+            policy: presentationLatencyPolicyLocked(state: state, now: now),
+            now: now
+        )
+        if dropPendingFrames, droppedFrameCount > 0 {
+            state.smoothestQueueDropsSinceLastSnapshot &+= UInt64(droppedFrameCount)
+            state.smoothestDisplayDebtDropsSinceLastSnapshot &+= UInt64(droppedFrameCount)
+            state.smoothestFifoResetCountSinceLastSnapshot &+= 1
+        }
+        recordPendingQueueSampleLocked(state: state, now: now)
+        state.lock.unlock()
+
+        MirageLogger.renderer(
+            "Reset presentation playout for stream \(streamID) reason=\(reason) dropped=\(droppedFrameCount)"
+        )
+        return droppedFrameCount
     }
 
     /// Returns the latest decoded-frame cursor for the stream.
@@ -249,8 +306,12 @@ final class MirageRenderStreamStore: @unchecked Sendable {
         state.lock.lock()
         state.sourceTargetFPS = target.sourceFPS
         state.displayTargetFPS = target.displayFPS
+        let latencyModeChanged = state.latencyMode != target.latencyMode
         state.latencyMode = target.latencyMode
         state.playoutDelayFrames = target.playoutDelayFrames
+        if latencyModeChanged {
+            state.presentationController.reset()
+        }
         trimPendingFramesToCurrentCapacityLocked(state: state)
         state.lock.unlock()
     }
@@ -272,7 +333,10 @@ final class MirageRenderStreamStore: @unchecked Sendable {
     func setTransportPathKind(for streamID: StreamID, pathKind: MirageNetworkPathKind) {
         let state = streamState(for: streamID)
         state.lock.lock()
-        state.transportPathKind = pathKind
+        if state.transportPathKind != pathKind {
+            state.transportPathKind = pathKind
+            state.presentationController.reset()
+        }
         state.lock.unlock()
     }
 
@@ -283,10 +347,14 @@ final class MirageRenderStreamStore: @unchecked Sendable {
     ) {
         let state = streamState(for: streamID)
         state.lock.lock()
+        let latencyModeChanged = state.latencyMode != latencyMode
         state.latencyMode = latencyMode
         state.playoutDelayFrames = MirageStreamCadenceTarget.clampedPlayoutDelayFrames(
             playoutDelayFrames ?? presentationLatencyPolicyLocked(state: state).targetPlayoutDelayFrames
         )
+        if latencyModeChanged {
+            state.presentationController.reset()
+        }
         trimPendingFramesToCurrentCapacityLocked(state: state)
         state.lock.unlock()
     }
@@ -353,36 +421,58 @@ extension MirageRenderStreamStore {
     }
 
     private func trimPendingFramesToCurrentCapacityLocked(state: MirageRenderStreamState) {
-        let result = removePendingFramesOverCapacityLocked(state: state, now: CFAbsoluteTimeGetCurrent())
-        recordPendingFrameTrimLocked(result, state: state)
-    }
-
-    private func trimPendingFramesToCapacityLocked(
-        state: MirageRenderStreamState,
-        now: CFAbsoluteTime
-    ) -> Int {
-        let result = removePendingFramesOverCapacityLocked(state: state, now: now)
-        recordPendingFrameTrimLocked(result, state: state)
-        return result.overwrittenPendingFrames
-    }
-
-    private func removePendingFramesOverCapacityLocked(
-        state: MirageRenderStreamState,
-        now: CFAbsoluteTime
-    ) -> MirageFramePlayoutQueue.TrimResult {
-        state.presentationController.trimAfterEnqueue(
+        let now = CFAbsoluteTimeGetCurrent()
+        let result = state.presentationController.trimAfterPolicyChange(
             frames: &state.pendingFrames,
             policy: presentationLatencyPolicyLocked(state: state, now: now),
             now: now
         )
+        recordPendingFrameTrimLocked(result, state: state)
     }
 
-    private func pendingFrameCapacityLocked(state: MirageRenderStreamState) -> Int {
-        presentationLatencyPolicyLocked(state: state).maximumQueueDepth
+    private func resetPresentationEpochIfMetadataChangedLocked(
+        state: MirageRenderStreamState,
+        hostEpoch: UInt16?,
+        dimensionToken: UInt16?,
+        now: CFAbsoluteTime
+    ) {
+        let hostEpochChanged = if let hostEpoch,
+                                  let previous = state.lastEnqueuedHostEpoch {
+            hostEpoch != previous
+        } else {
+            false
+        }
+        let dimensionTokenChanged = if let dimensionToken,
+                                       let previous = state.lastEnqueuedDimensionToken {
+            dimensionToken != previous
+        } else {
+            false
+        }
+
+        if hostEpochChanged || dimensionTokenChanged {
+            let droppedFrameCount = state.pendingFrames.count
+            state.pendingFrames.removeAll(keepingCapacity: false)
+            state.presentationController.resetPresentationEpoch(
+                policy: presentationLatencyPolicyLocked(state: state, now: now),
+                now: now
+            )
+            if droppedFrameCount > 0 {
+                state.smoothestQueueDropsSinceLastSnapshot &+= UInt64(droppedFrameCount)
+                state.smoothestDisplayDebtDropsSinceLastSnapshot &+= UInt64(droppedFrameCount)
+                state.smoothestFifoResetCountSinceLastSnapshot &+= 1
+            }
+        }
+
+        if let hostEpoch {
+            state.lastEnqueuedHostEpoch = hostEpoch
+        }
+        if let dimensionToken {
+            state.lastEnqueuedDimensionToken = dimensionToken
+        }
     }
 
     private func recordPendingFrameTrimLocked(
-        _ result: MirageFramePlayoutQueue.TrimResult,
+        _ result: MirageVideoPlayoutBuffer.TrimResult,
         state: MirageRenderStreamState
     ) {
         recordOverwrittenPendingFramesLocked(result.overwrittenPendingFrames, state: state)
@@ -458,7 +548,9 @@ extension MirageRenderStreamStore {
             latencyMode: state.latencyMode,
             sourceFPS: state.sourceTargetFPS,
             displayFPS: state.displayTargetFPS,
-            hasRecentInteraction: hasRecentInteractionLocked(state: state, now: now)
+            transportPathKind: state.transportPathKind,
+            hasRecentInteraction: hasRecentInteractionLocked(state: state, now: now),
+            lastInteractionAgeSeconds: lastInteractionAgeSecondsLocked(state: state, now: now)
         )
     }
 
@@ -467,7 +559,15 @@ extension MirageRenderStreamStore {
         now: CFAbsoluteTime
     ) -> Bool {
         guard state.lastInteractionTime > 0 else { return false }
-        return max(0, now - state.lastInteractionTime) < 0.750
+        return max(0, now - state.lastInteractionTime) < 1.500
+    }
+
+    private func lastInteractionAgeSecondsLocked(
+        state: MirageRenderStreamState,
+        now: CFAbsoluteTime
+    ) -> CFTimeInterval? {
+        guard state.lastInteractionTime > 0 else { return nil }
+        return max(0, now - state.lastInteractionTime)
     }
 
     func activePresentationRecoveryHandlersLocked(state: MirageRenderStreamState) -> [@Sendable () -> Void] {

@@ -14,7 +14,9 @@ extension WindowCaptureEngine {
     func applyResolutionSettings(to streamConfig: SCStreamConfiguration) {
         switch captureMode {
         case .window:
-            streamConfig.captureResolution = .best
+            if #available(macOS 14.0, *) {
+                streamConfig.captureResolution = .best
+            }
             streamConfig.width = currentWidth
             streamConfig.height = currentHeight
         case .display:
@@ -22,10 +24,17 @@ extension WindowCaptureEngine {
                 streamConfig.width = currentWidth
                 streamConfig.height = currentHeight
             } else {
-                streamConfig.captureResolution = .best
+                if #available(macOS 14.0, *) {
+                    streamConfig.captureResolution = .best
+                } else {
+                    streamConfig.width = currentWidth
+                    streamConfig.height = currentHeight
+                }
             }
         case nil:
-            streamConfig.captureResolution = .best
+            if #available(macOS 14.0, *) {
+                streamConfig.captureResolution = .best
+            }
             streamConfig.width = currentWidth
             streamConfig.height = currentHeight
         }
@@ -57,7 +66,7 @@ extension WindowCaptureEngine {
         destinationRect: CGRect? = nil
     ) -> SCStreamConfiguration {
         let streamConfig = SCStreamConfiguration()
-        if useBestCaptureResolution {
+        if useBestCaptureResolution, #available(macOS 14.0, *) {
             streamConfig.captureResolution = .best
         }
         if let width, let height {

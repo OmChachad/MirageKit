@@ -71,7 +71,9 @@ extension WindowCaptureEngine {
             excludedWindows: []
         )
 
-        streamConfig.captureResolution = .best
+        if #available(macOS 14.0, *) {
+            streamConfig.captureResolution = .best
+        }
         streamConfig.width = currentWidth
         streamConfig.height = currentHeight
 
@@ -264,8 +266,14 @@ extension WindowCaptureEngine {
                 MirageLogger.capture("HiDPI capture: scale=\(currentScaleFactor), using explicit resolution")
             }
         } else {
-            streamConfig.captureResolution = .best
-            MirageLogger.capture("HiDPI capture: scale=\(currentScaleFactor), forcing captureResolution=.best")
+            if #available(macOS 14.0, *) {
+                streamConfig.captureResolution = .best
+                MirageLogger.capture("HiDPI capture: scale=\(currentScaleFactor), forcing captureResolution=.best")
+            } else {
+                streamConfig.width = currentWidth
+                streamConfig.height = currentHeight
+                MirageLogger.capture("HiDPI capture: scale=\(currentScaleFactor), using explicit resolution on macOS 13")
+            }
         }
         Self.applyCaptureGeometry(
             to: streamConfig,
@@ -275,6 +283,16 @@ extension WindowCaptureEngine {
 
         // Frame rate
         streamConfig.minimumFrameInterval = resolvedMinimumFrameInterval
+        let configuredCaptureRate = minimumFrameIntervalRate
+        let displayRefreshText = currentDisplayRefreshRate
+            .map { $0.formatted(.number.precision(.fractionLength(1))) }
+            ?? "unknown"
+        MirageLogger.capture(
+            "event=capture_cadence_config mode=display targetFPS=\(currentFrameRate) " +
+                "sckFPS=\(configuredCaptureRate) displayRefresh=\(displayRefreshText) " +
+                "nativeDisplayCadence=\(usesNativeRefreshMinimumFrameInterval) " +
+                "intervalPolicy=\(minimumFrameIntervalPolicy.rawValue)"
+        )
 
         // Color and format
         streamConfig.pixelFormat = pixelFormatType

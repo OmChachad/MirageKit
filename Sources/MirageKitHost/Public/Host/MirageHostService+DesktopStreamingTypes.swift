@@ -132,6 +132,11 @@ extension MirageHostService {
         let captureResolution: CGSize
     }
 
+    struct DesktopStreamActivationResult {
+        let activeClientContext: ClientContext
+        let audioConfiguration: MirageAudioConfiguration
+    }
+
     struct DesktopCaptureContext {
         let display: SCDisplayWrapper
         let resolution: CGSize
@@ -189,6 +194,7 @@ extension MirageHostService {
         let capturePressureProfile: WindowCaptureEngine.CapturePressureProfile
         let latencyMode: MirageStreamLatencyMode
         let hostBufferingPolicy: MirageHostBufferingPolicy
+        let transportPathKind: MirageNetworkPathKind
         let enteredBitrate: Int?
         let bitrateAdaptationCeiling: Int?
         let encoderMaxWidth: Int?
