@@ -113,11 +113,7 @@ extension StreamContext {
                     suppressEncodedNonKeyframesUntilKeyframe = false
                 }
 
-                let fecBlockSize = resolvedFECBlockSize(
-                    isKeyframe: isKeyframe,
-                    frameByteCount: encodedData.count,
-                    now: now
-                )
+                let fecBlockSize = resolvedFECBlockSize(isKeyframe: isKeyframe, now: now)
                 let reservation = callbackSequencer.reserve(
                     frameByteCount: encodedData.count,
                     maxPayloadSize: maxPayloadSize,
@@ -137,24 +133,12 @@ extension StreamContext {
                     )
                 }
                 let contentRect = pinnedContentRect ?? currentContentRect
-                let pacingOverride = Self.mediaPacingOverride(
-                    isKeyframe: isKeyframe,
-                    transportPathKind: transportPathKind,
-                    targetBitrateBps: currentTargetBitrateBps,
-                    maxPayloadSize: maxPayloadSize
-                )
+                let pacingOverride = isKeyframe ? Self.keyframePacingOverride() : nil
                 let frameByteCount = encodedData.count
 
                 let flags = baseFrameFlagsSnapshot.union(dynamicFrameFlags)
                 let dimToken = dimensionToken
                 let currentEpoch = epoch
-                let sendDeadline = Self.mediaSendDeadline(
-                    encodedAt: now,
-                    isKeyframe: isKeyframe,
-                    latencyMode: latencyMode,
-                    transportPathKind: transportPathKind,
-                    targetFrameRate: currentFrameRate
-                )
 
                 let generation = packetSender.currentGeneration
                 if isKeyframe {
@@ -180,7 +164,6 @@ extension StreamContext {
                     logPrefix: logPrefix,
                     generation: generation,
                     encodedAt: now,
-                    sendDeadline: sendDeadline,
                     targetFrameRate: currentFrameRate,
                     pacingOverride: pacingOverride
                 )
@@ -260,11 +243,9 @@ extension StreamContext {
 
     func restartDisplayCaptureForCadenceRecovery(reason: String) async {
         guard captureMode == .display, !isResizing, !encodingSuspendedForResize else { return }
-        let restarted = await captureEngine?.restartCaptureForDeliveryValidation(reason: reason) ?? false
-        guard restarted else { return }
+        await captureEngine?.restartCapture(reason: reason)
         await scheduleCoalescedRecoveryKeyframe(
             reason: "Capture cadence recovery",
-            noteLoss: true,
             ignoreExistingInFlight: true
         )
     }
@@ -295,38 +276,6 @@ extension StreamContext {
             "Cached screenshot startup frame for stream \(streamID) pending first live display sample"
         )
         return true
-    }
-
-    nonisolated static func mediaSendDeadline(
-        encodedAt: CFAbsoluteTime,
-        isKeyframe: Bool,
-        latencyMode: MirageStreamLatencyMode,
-        transportPathKind: MirageNetworkPathKind = .unknown,
-        targetFrameRate: Int
-    ) -> CFAbsoluteTime? {
-        guard !isKeyframe else { return nil }
-        let frameInterval = 1.0 / Double(max(1, targetFrameRate))
-        let deadlineOffset = switch latencyMode {
-        case .lowestLatency:
-            if transportPathKind == .awdl {
-                clamp(frameInterval * 5.0, min: 0.080, max: 0.120)
-            } else {
-                clamp(frameInterval * 2.0, min: 0.016, max: 0.050)
-            }
-        case .balanced:
-            if transportPathKind == .awdl {
-                clamp(frameInterval * 5.0, min: 0.080, max: 0.120)
-            } else {
-                clamp(frameInterval * 3.0, min: 0.033, max: 0.080)
-            }
-        case .smoothest:
-            clamp(0.160 + frameInterval * 2.0, min: 0.120, max: 0.300)
-        }
-        return encodedAt + deadlineOffset
-    }
-
-    nonisolated private static func clamp(_ value: Double, min lowerBound: Double, max upperBound: Double) -> Double {
-        Swift.min(Swift.max(value, lowerBound), upperBound)
     }
 }
 #endif

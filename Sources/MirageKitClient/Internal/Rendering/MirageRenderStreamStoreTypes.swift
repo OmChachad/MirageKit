@@ -41,8 +41,8 @@ struct RenderTelemetrySnapshot {
     /// Frames accepted by the display layer during the one-second telemetry window.
     let layerAcceptedFPS: Double
 
-    /// Unique frame submissions accepted by the display layer during the one-second telemetry window.
-    let visibleFrameFPS: Double
+    /// Unique frames presented during the one-second telemetry window.
+    let presentedFPS: Double
 
     /// Total display-layer submissions during the one-second telemetry window.
     let submittedFPS: Double
@@ -70,9 +70,6 @@ struct RenderTelemetrySnapshot {
 
     /// Active Smoothest-mode display debt cap, in milliseconds.
     let smoothestDisplayDebtCapMs: Double
-
-    /// Current Smoothest-mode target playout delay, in milliseconds.
-    let smoothestTargetDelayMs: Double
 
     /// Pending frames overwritten because the local playout queue was full.
     let overwrittenPendingFrames: UInt64
@@ -181,16 +178,14 @@ final class MirageRenderStreamState {
     var lastSubmittedTime: CFAbsoluteTime = 0
     var lastSelectedFrameNumber: UInt32?
     var lastSubmittedFrameNumber: UInt32?
-    var lastEnqueuedHostEpoch: UInt16?
-    var lastEnqueuedDimensionToken: UInt16?
     var lastSubmittedRemotePresentationTime: CMTime = .invalid
     var lastSubmittedMappedPresentationTime: CMTime = .invalid
     var lastAcceptedFrameTimeline: FrameTimeline?
     var lastDisplayTickTime: CFAbsoluteTime = 0
     var sourceTargetFPS: Int = 60
     var displayTargetFPS: Int = 60
-    var latencyMode: MirageStreamLatencyMode = .balanced
-    var playoutDelayFrames: Int = MirageStreamCadenceTarget.defaultPlayoutDelayFrames(for: .balanced)
+    var latencyMode: MirageStreamLatencyMode = .lowestLatency
+    var playoutDelayFrames: Int = 0
     var transportPathKind: MirageNetworkPathKind = .unknown
     var lastInteractionTime: CFAbsoluteTime = 0
     var listeners: [ObjectIdentifier: MirageRenderStreamFrameListener] = [:]
@@ -242,7 +237,6 @@ final class MirageRenderStreamState {
     /// Clears queued frames, submission state, and rolling telemetry while retaining live listener registrations.
     func resetFramesAndTelemetryLocked() {
         pendingFrames.removeAll(keepingCapacity: false)
-        presentationController.reset()
         generation &+= 1
         nextSequence = 0
         lastSubmittedGeneration = generation
@@ -250,8 +244,6 @@ final class MirageRenderStreamState {
         lastSubmittedTime = 0
         lastSelectedFrameNumber = nil
         lastSubmittedFrameNumber = nil
-        lastEnqueuedHostEpoch = nil
-        lastEnqueuedDimensionToken = nil
         lastSubmittedRemotePresentationTime = .invalid
         lastSubmittedMappedPresentationTime = .invalid
         lastAcceptedFrameTimeline = nil

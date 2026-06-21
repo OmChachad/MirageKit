@@ -67,10 +67,6 @@ enum MirageHostWallpaperResolver {
         preferredMaxPixelWidth: Int,
         preferredMaxPixelHeight: Int
     ) async -> Payload? {
-        guard #available(macOS 14.0, *) else {
-            return nil
-        }
-
         guard let primaryDisplayID = resolvedPrimaryPhysicalDisplayID() else {
             return nil
         }
@@ -268,10 +264,6 @@ enum MirageHostWallpaperResolver {
         targetPixelWidth: Int,
         targetPixelHeight: Int
     ) async -> CGImage? {
-        guard #available(macOS 14.0, *) else {
-            return nil
-        }
-
         let configuration = SCStreamConfiguration()
         configuration.width = max(1, targetPixelWidth)
         configuration.height = max(1, targetPixelHeight)

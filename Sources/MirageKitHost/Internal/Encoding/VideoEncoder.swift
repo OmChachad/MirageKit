@@ -85,7 +85,6 @@ actor VideoEncoder {
     var qualityOverrideActive = false
     let compressionQualityCeiling: Float = 0.94
     let performanceTracker = EncodePerformanceTracker()
-    let encodedOutputTelemetry = EncodedOutputTelemetryTracker()
     var maximizePowerEfficiencyEnabled: Bool
 
     var isEncoding = false
@@ -121,7 +120,7 @@ actor VideoEncoder {
 
     init(
         configuration: MirageEncoderConfiguration,
-        latencyMode: MirageStreamLatencyMode = .balanced,
+        latencyMode: MirageStreamLatencyMode = .lowestLatency,
         streamKind: StreamKind = .window,
         inFlightLimit: Int? = nil,
         maximizePowerEfficiencyEnabled: Bool = false
@@ -208,7 +207,6 @@ final class EncodeInfo: @unchecked Sendable {
     let encodeStartTime: CFAbsoluteTime
     let sessionVersion: UInt64
     let performanceTracker: EncodePerformanceTracker?
-    let encodedOutputTelemetry: EncodedOutputTelemetryTracker?
     let completion: (@Sendable () -> Void)?
     let isProRes: Bool
     /// Retains the originating capture sample buffer until VT finishes with the frame.
@@ -222,7 +220,6 @@ final class EncodeInfo: @unchecked Sendable {
         encodeStartTime: CFAbsoluteTime = 0,
         sessionVersion: UInt64 = 0,
         performanceTracker: EncodePerformanceTracker?,
-        encodedOutputTelemetry: EncodedOutputTelemetryTracker?,
         completion: (@Sendable () -> Void)?,
         isProRes: Bool = false,
         retainedSampleBuffer: CMSampleBuffer? = nil,
@@ -233,7 +230,6 @@ final class EncodeInfo: @unchecked Sendable {
         self.encodeStartTime = encodeStartTime
         self.sessionVersion = sessionVersion
         self.performanceTracker = performanceTracker
-        self.encodedOutputTelemetry = encodedOutputTelemetry
         self.completion = completion
         self.isProRes = isProRes
         self.retainedSampleBuffer = retainedSampleBuffer

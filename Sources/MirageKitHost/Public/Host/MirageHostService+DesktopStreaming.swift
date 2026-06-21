@@ -25,7 +25,7 @@ extension MirageHostService {
         ) else {
             return nil
         }
-        guard (latencyMode == .lowestLatency || latencyMode == .balanced),
+        guard latencyMode == .lowestLatency,
               allowRuntimeQualityAdjustment == false,
               normalizedBitrate > desktopLowestLatencyFixedQualityBitrateCapBps else {
             return normalizedBitrate
@@ -46,7 +46,7 @@ func startDesktopStream(
     captureQueueDepth: Int?,
     enteredBitrate: Int?,
     bitrate: Int?,
-    latencyMode: MirageStreamLatencyMode = .balanced,
+    latencyMode: MirageStreamLatencyMode = .lowestLatency,
     hostBufferingPolicy: MirageHostBufferingPolicy = .stability,
     allowRuntimeQualityAdjustment: Bool?,
     lowLatencyHighResolutionCompressionBoost: Bool,
@@ -219,7 +219,6 @@ async throws {
         encoderMaxHeight: encoderMaxHeight,
         disableResolutionCap: disableResolutionCap
     ).resolvedStreamScale
-    let transportPathKind = clientContext.pathSnapshot.map { MirageNetworkPathClassifier.classify($0).kind } ?? .unknown
 
     let streamContext = await makeDesktopStreamContext(
         DesktopStreamContextRequest(
@@ -234,7 +233,6 @@ async throws {
             capturePressureProfile: capturePressureProfile,
             latencyMode: latencyMode,
             hostBufferingPolicy: hostBufferingPolicy,
-            transportPathKind: transportPathKind,
             enteredBitrate: enteredBitrate,
             bitrateAdaptationCeiling: bitrateAdaptationCeiling,
             encoderMaxWidth: encoderMaxWidth,
@@ -261,7 +259,7 @@ async throws {
         stage: "before stream activation"
     )
 
-    let activationResult = try await activateAndStartDesktopStream(
+    let activeClientContext = try await activateAndStartDesktopStream(
         DesktopStreamActivation(
             streamID: streamID,
             clientContext: clientContext,
@@ -275,7 +273,7 @@ async throws {
         ),
         virtualDisplaySetupGuardToken: &virtualDisplaySetupGuardToken
     )
-    logDesktopStartStep("display capture started")
+    logDesktopStartStep("capture and encoder started")
     try await ensureDesktopStreamStartupCanContinue(
         streamID: streamID,
         clientSessionID: clientContext.sessionID,
@@ -288,7 +286,7 @@ async throws {
         DesktopStreamStartedNotification(
             streamID: streamID,
             desktopSessionID: desktopSessionID,
-            activeClientContext: activationResult.activeClientContext,
+            activeClientContext: activeClientContext,
             streamContext: streamContext,
             captureResolution: captureResolution,
             captureSource: captureSource,
@@ -304,24 +302,6 @@ async throws {
         startedDisplayResolution: startedDisplayResolution,
         captureResolution: captureResolution
     )
-
-    do {
-        _ = try await waitForDesktopCaptureStartupReadiness(
-            streamContext: streamContext,
-            mode: mode,
-            clientID: activationResult.activeClientContext.client.id,
-            audioConfiguration: activationResult.audioConfiguration
-        )
-        logDesktopStartStep("capture readiness satisfied")
-    } catch {
-        MirageLogger.error(
-            .host,
-            error: error,
-            message: "Desktop display capture readiness failed after stream start; cleaning up stream state: "
-        )
-        await stopDesktopStream(reason: .error, triggeredByExplicitStreamStop: false)
-        throw error
-    }
     clearDesktopStartupMarkerOnExit = false
 }
 }

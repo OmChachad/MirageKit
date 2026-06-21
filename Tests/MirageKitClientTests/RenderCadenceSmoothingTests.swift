@@ -78,12 +78,11 @@ struct RenderCadenceSmoothingTests {
         #expect(telemetry.playoutDelayFrames == 0)
     }
 
-    @Test("Smoothest holds the first frame until its playout target")
-    func smoothestHoldsFirstFrameUntilItsPlayoutTarget() {
+    @Test("Smoothest uses timed playout without queue-level hold")
+    func smoothestUsesTimedPlayoutWithoutQueueLevelHold() {
         let streamID: StreamID = 407
         MirageRenderStreamStore.shared.clear(for: streamID)
         defer { MirageRenderStreamStore.shared.clear(for: streamID) }
-        MirageRenderStreamStore.shared.setTransportPathKind(for: streamID, pathKind: .wifi)
         MirageRenderStreamStore.shared.setCadenceTarget(
             for: streamID,
             target: MirageStreamCadenceTarget(
@@ -101,8 +100,23 @@ struct RenderCadenceSmoothingTests {
             for: streamID
         )
         let first = MirageRenderStreamStore.shared.frameForPresentation(for: streamID, after: .zero)
-        #expect(first == nil)
-        #expect(MirageRenderStreamStore.shared.peekPendingFrame(for: streamID)?.targetPlayoutDelayMs == 100)
+        #expect(first?.sequence == 1)
+        if let first {
+            MirageRenderStreamStore.shared.markSubmitted(cursor: first.cursor, for: streamID)
+        }
+
+        _ = MirageRenderStreamStore.shared.enqueue(
+            pixelBuffer: makePixelBuffer(),
+            contentRect: .zero,
+            decodeTime: CFAbsoluteTimeGetCurrent(),
+            presentationTime: CMTime(value: 1, timescale: 60),
+            for: streamID
+        )
+        let next = MirageRenderStreamStore.shared.frameForPresentation(
+            for: streamID,
+            after: first?.cursor ?? .zero
+        )
+        #expect(next?.sequence == 2)
 
         let telemetry = MirageRenderStreamStore.shared.renderTelemetrySnapshot(for: streamID)
         #expect(telemetry.playoutDelayFrames == 0)
@@ -124,7 +138,7 @@ struct RenderCadenceSmoothingTests {
 
         let now = CFAbsoluteTimeGetCurrent()
         for index in 0 ..< 3 {
-            let age: CFAbsoluteTime = index < 2 ? 0.650 : 0.050
+            let age: CFAbsoluteTime = index < 2 ? 0.350 : 0.050
             _ = MirageRenderStreamStore.shared.enqueue(
                 pixelBuffer: makePixelBuffer(),
                 contentRect: .zero,
@@ -135,8 +149,7 @@ struct RenderCadenceSmoothingTests {
         }
 
         let frame = MirageRenderStreamStore.shared.frameForPresentation(for: streamID, after: .zero)
-        #expect(frame == nil)
-        #expect(MirageRenderStreamStore.shared.peekPendingFrame(for: streamID)?.sequence == 3)
+        #expect(frame?.sequence == 3)
 
         let telemetry = MirageRenderStreamStore.shared.renderTelemetrySnapshot(for: streamID)
         #expect(telemetry.smoothestQueueDrops == 2)
@@ -169,50 +182,18 @@ struct RenderCadenceSmoothingTests {
         }
 
         let frame = MirageRenderStreamStore.shared.frameForPresentation(for: streamID, after: .zero)
-        #expect(frame == nil)
+        #expect(frame?.sequence == 1)
 
         let telemetry = MirageRenderStreamStore.shared.renderTelemetrySnapshot(for: streamID)
         #expect(telemetry.smoothestQueueDrops == 0)
         #expect(telemetry.pendingFrameCount == 3)
     }
 
-    @Test("Smoothest uses path-specific initial playout targets")
-    func smoothestUsesPathSpecificInitialPlayoutTargets() {
+    @Test("Smoothest uses tighter debt cap during recent input")
+    func smoothestUsesTighterDebtCapDuringRecentInput() {
         let streamID: StreamID = 412
-        for (pathKind, expectedDelayMs) in [
-            (MirageNetworkPathKind.wired, 50.0),
-            (.wifi, 100.0),
-            (.awdl, 160.0),
-            (.vpn, 250.0),
-        ] {
-            MirageRenderStreamStore.shared.clear(for: streamID)
-            MirageRenderStreamStore.shared.setTransportPathKind(for: streamID, pathKind: pathKind)
-            MirageRenderStreamStore.shared.setCadenceTarget(
-                for: streamID,
-                target: MirageStreamCadenceTarget(
-                    sourceFPS: 60,
-                    displayFPS: 60,
-                    latencyMode: .smoothest
-                )
-            )
-            _ = MirageRenderStreamStore.shared.enqueue(
-                pixelBuffer: makePixelBuffer(),
-                contentRect: .zero,
-                decodeTime: CFAbsoluteTimeGetCurrent(),
-                presentationTime: .zero,
-                for: streamID
-            )
-            #expect(MirageRenderStreamStore.shared.peekPendingFrame(for: streamID)?.targetPlayoutDelayMs == expectedDelayMs)
-        }
-        MirageRenderStreamStore.shared.clear(for: streamID)
-    }
-
-    @Test("Smoothest recent input reduces playout delay with AWDL floor")
-    func smoothestRecentInputReducesPlayoutDelayWithAwdlFloor() {
-        let streamID: StreamID = 413
         MirageRenderStreamStore.shared.clear(for: streamID)
         defer { MirageRenderStreamStore.shared.clear(for: streamID) }
-        MirageRenderStreamStore.shared.setTransportPathKind(for: streamID, pathKind: .awdl)
         MirageRenderStreamStore.shared.setCadenceTarget(
             for: streamID,
             target: MirageStreamCadenceTarget(
@@ -221,84 +202,77 @@ struct RenderCadenceSmoothingTests {
                 latencyMode: .smoothest
             )
         )
-        MirageRenderStreamStore.shared.noteInteraction(for: streamID, now: CFAbsoluteTimeGetCurrent() - 0.300)
+        MirageRenderStreamStore.shared.noteInteraction(for: streamID)
 
-        _ = MirageRenderStreamStore.shared.enqueue(
-            pixelBuffer: makePixelBuffer(),
-            contentRect: .zero,
-            decodeTime: CFAbsoluteTimeGetCurrent(),
-            presentationTime: .zero,
-            for: streamID
-        )
+        for index in 0 ..< 20 {
+            _ = MirageRenderStreamStore.shared.enqueue(
+                pixelBuffer: makePixelBuffer(),
+                contentRect: .zero,
+                decodeTime: Double(index),
+                presentationTime: CMTime(seconds: Double(index), preferredTimescale: 600),
+                for: streamID
+            )
+        }
 
-        #expect(MirageRenderStreamStore.shared.peekPendingFrame(for: streamID)?.targetPlayoutDelayMs == 96)
+        #expect(MirageRenderStreamStore.shared.pendingFrameCount(for: streamID) == 7)
+        #expect(MirageRenderStreamStore.shared.peekPendingFrame(for: streamID)?.sequence == 14)
+
+        let telemetry = MirageRenderStreamStore.shared.renderTelemetrySnapshot(for: streamID)
+        #expect(telemetry.smoothestDisplayDebtCapMs == 100)
+        #expect(telemetry.smoothestDisplayDebtMs <= 100.1)
+        #expect(telemetry.smoothestFifoResetCount == 0)
     }
 
-    @Test("Balanced uses one-frame playout and immediate display timing")
-    func balancedUsesOneFramePlayoutAndImmediateDisplayTiming() {
-        let streamID: StreamID = 414
+    @Test("Smoothest recent input cap expires after idle window")
+    func smoothestRecentInputCapExpiresAfterIdleWindow() {
+        let streamID: StreamID = 413
         MirageRenderStreamStore.shared.clear(for: streamID)
         defer { MirageRenderStreamStore.shared.clear(for: streamID) }
-        MirageRenderStreamStore.shared.setTransportPathKind(for: streamID, pathKind: .awdl)
         MirageRenderStreamStore.shared.setCadenceTarget(
             for: streamID,
             target: MirageStreamCadenceTarget(
                 sourceFPS: 60,
                 displayFPS: 60,
-                latencyMode: .balanced
+                latencyMode: .smoothest
             )
         )
+        MirageRenderStreamStore.shared.noteInteraction(for: streamID, now: CFAbsoluteTimeGetCurrent() - 1.0)
 
-        _ = MirageRenderStreamStore.shared.enqueue(
-            pixelBuffer: makePixelBuffer(),
-            contentRect: .zero,
-            decodeTime: CFAbsoluteTimeGetCurrent(),
-            presentationTime: .zero,
-            for: streamID
-        )
+        for index in 0 ..< 20 {
+            _ = MirageRenderStreamStore.shared.enqueue(
+                pixelBuffer: makePixelBuffer(),
+                contentRect: .zero,
+                decodeTime: Double(index),
+                presentationTime: CMTime(seconds: Double(index), preferredTimescale: 600),
+                for: streamID
+            )
+        }
 
-        let pendingDelayMs = MirageRenderStreamStore.shared.peekPendingFrame(for: streamID)?.targetPlayoutDelayMs
-        #expect(abs((pendingDelayMs ?? 0) - (1000.0 / 60.0)) < 0.5)
-
-        let timing = MirageRenderStreamStore.shared.presentationTiming(for: streamID)
-        #expect(timing.latencyMode == .balanced)
-        #expect(timing.displaysImmediately)
+        let telemetry = MirageRenderStreamStore.shared.renderTelemetrySnapshot(for: streamID)
+        #expect(telemetry.smoothestDisplayDebtCapMs == 150)
+        #expect(MirageRenderStreamStore.shared.pendingFrameCount(for: streamID) == 10)
     }
 
-    @Test("Smoothest hard resets only beyond the path debt limit")
-    func smoothestHardResetsOnlyBeyondPathDebtLimit() {
+    @Test("Smoothest hard resets only beyond three hundred milliseconds")
+    func smoothestHardResetsOnlyBeyondThreeHundredMilliseconds() {
         let policy = MiragePresentationLatencyPolicy(
             latencyMode: .smoothest,
             sourceFPS: 60,
             displayFPS: 60
         )
         let now = CFAbsoluteTimeGetCurrent()
-        var softBuffer = MirageVideoPlayoutBuffer()
-        var softFrames = makeRenderFrames(count: 10, decodeTime: now - 0.200).map {
-            $0.withPlayoutMetadata(
-                transportPathKind: .unknown,
-                targetPlayoutTime: now - 0.100,
-                targetPlayoutDelayMs: 250
-            )
-        }
-        let softSelection = softBuffer.selectFrame(
+        var softFrames = makeRenderFrames(count: 10, decodeTime: now - 0.299)
+        let softSelection = MirageFramePlayoutQueue.selectFrame(
             frames: &softFrames,
             after: .zero,
             policy: policy,
             now: now
         )
-        #expect(softSelection.frame?.sequence == 1)
+        #expect(softSelection.frame?.sequence == 10)
         #expect(softSelection.trimResult.smoothestFifoResetCount == 0)
 
-        var hardBuffer = MirageVideoPlayoutBuffer()
-        var hardFrames = makeRenderFrames(count: 10, decodeTime: now - 0.200).map {
-            $0.withPlayoutMetadata(
-                transportPathKind: .unknown,
-                targetPlayoutTime: now - 0.130,
-                targetPlayoutDelayMs: 250
-            )
-        }
-        let hardSelection = hardBuffer.selectFrame(
+        var hardFrames = makeRenderFrames(count: 10, decodeTime: now - 0.301)
+        let hardSelection = MirageFramePlayoutQueue.selectFrame(
             frames: &hardFrames,
             after: .zero,
             policy: policy,
@@ -335,7 +309,7 @@ struct RenderCadenceSmoothingTests {
         }
 
         let frame = MirageRenderStreamStore.shared.frameForPresentation(for: streamID, after: .zero)
-        #expect(frame == nil)
+        #expect(frame?.sequence == 1)
 
         let telemetry = MirageRenderStreamStore.shared.renderTelemetrySnapshot(for: streamID)
         #expect(telemetry.smoothestQueueDrops == 0)
@@ -369,23 +343,12 @@ struct RenderCadenceSmoothingTests {
             playoutDelayFrames: 0,
             latencyMode: .smoothest
         )
-        #expect(!smoothestTiming.displaysImmediately)
+        #expect(smoothestTiming.displaysImmediately)
         let smoothestPresentationSeconds = CMTimeGetSeconds(smoothestTiming.presentationTime(
             referenceTime: referenceTime,
             timescale: timescale
         ))
-        #expect(abs(smoothestPresentationSeconds - (referenceTime + 0.008)) < 0.000_001)
-
-        let balancedTiming = MirageRenderPresentationTiming(
-            targetFPS: 60,
-            playoutDelayFrames: 1,
-            latencyMode: .balanced
-        )
-        #expect(balancedTiming.displaysImmediately)
-        #expect(CMTimeGetSeconds(balancedTiming.presentationTime(
-            referenceTime: referenceTime,
-            timescale: timescale
-        )) == referenceTime)
+        #expect(abs(smoothestPresentationSeconds - referenceTime) < 0.000_001)
     }
 
     @Test("Explicit transport playout delay can raise smoothest to two frames")

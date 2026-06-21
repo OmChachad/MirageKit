@@ -53,7 +53,7 @@ public extension MirageClientService {
         var overrides = encoderOverrides ?? MirageEncoderOverrides()
         if overrides.keyFrameInterval == nil { overrides.keyFrameInterval = keyFrameInterval }
         applyEncoderOverrides(overrides, to: &request)
-        pendingStreamSetupLatencyMode = request.latencyMode ?? .balanced
+        pendingStreamSetupLatencyMode = request.latencyMode ?? .lowestLatency
 
         let geometry = resolvedStreamGeometry(
             for: effectiveDisplayResolution,

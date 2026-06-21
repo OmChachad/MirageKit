@@ -80,11 +80,6 @@ extension MirageHostService {
                         } else {
                             cancelAllStreamSetup(clientSessionID: clientContext.sessionID)
                         }
-                    case let .streamReady(message):
-                        guard let liveClientContext = findClientContext(sessionID: clientContext.sessionID) else {
-                            return
-                        }
-                        await handleClientMessage(message, from: liveClientContext)
                     case .terminal:
                         markStreamSetupSessionClosing(clientSessionID: clientContext.sessionID)
                         await disconnectClient(

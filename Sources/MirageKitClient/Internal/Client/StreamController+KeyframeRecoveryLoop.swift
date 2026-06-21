@@ -15,16 +15,10 @@ extension StreamController {
         guard keyframeRecoveryTask == nil else { return }
         keyframeRecoveryAttempt = 0
         lastRecoveryRequestTime = 0
-        recoveryKeyframeDispatchTimes.removeAll(keepingCapacity: false)
         if clientRecoveryStatus != .postResizeAwaitingFirstFrame,
            clientRecoveryStatus != .hardRecovery {
             await setClientRecoveryStatus(.keyframeRecovery)
         }
-        _ = MirageRenderStreamStore.shared.resetPresentation(
-            for: streamID,
-            dropPendingFrames: true,
-            reason: "keyframe-recovery-start"
-        )
         keyframeRecoveryTask = Task { [weak self] in
             await self?.runKeyframeRecoveryLoop()
         }
@@ -36,7 +30,6 @@ extension StreamController {
         keyframeRecoveryTask = nil
         keyframeRecoveryAttempt = 0
         lastRecoveryRequestTime = 0
-        recoveryKeyframeDispatchTimes.removeAll(keepingCapacity: false)
         recoveryCoordinator.recordProgress()
         if clientRecoveryStatus == .keyframeRecovery {
             await setClientRecoveryStatus(.idle)
@@ -90,26 +83,13 @@ extension StreamController {
             if didDispatch {
                 keyframeRecoveryAttempt &+= 1
             } else {
-                let nextDelay = keyframeRecoveryDispatchRetryDelay(now: currentTime)
                 do {
-                    try await Task.sleep(for: Self.duration(seconds: nextDelay))
+                    try await Task.sleep(for: .milliseconds(20))
                 } catch {
                     return
                 }
             }
         }
-    }
-
-    private func keyframeRecoveryDispatchRetryDelay(now: CFAbsoluteTime) -> CFAbsoluteTime {
-        if recoveryCoordinator.retryDeadline > now {
-            return max(0.02, min(1.0, recoveryCoordinator.retryDeadline - now))
-        }
-        guard recoveryKeyframeDispatchTimes.count >= Self.recoveryKeyframeDispatchLimit,
-              let oldest = recoveryKeyframeDispatchTimes.first else {
-            return 0.02
-        }
-        let nextWindowTime = oldest + Self.recoveryKeyframeDispatchWindow
-        return max(0.02, min(1.0, nextWindowTime - now))
     }
 
     private func escalateKeyframeRecoveryAfterExhaustion(

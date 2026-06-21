@@ -19,7 +19,7 @@ struct ClientStreamingAnomalySample {
     let displayTickFPS: Double
     let submitAttemptFPS: Double
     let layerAcceptedFPS: Double
-    let visibleFrameFPS: Double
+    let presentedFPS: Double
     let submittedFPS: Double
     let uniqueSubmittedFPS: Double
     let pendingFrameCount: Int
@@ -150,7 +150,7 @@ struct ClientStreamingAnomalySample {
         self.displayTickFPS = displayTickFPS
         self.submitAttemptFPS = submitAttemptFPS
         self.layerAcceptedFPS = layerAcceptedFPS
-        self.visibleFrameFPS = visibleFrameFPS ?? presentedFPS
+        self.presentedFPS = visibleFrameFPS ?? presentedFPS
         _ = visibleFrameCadenceKnown
         self.submittedFPS = submittedFPS ?? layerEnqueueFPS ?? submitAttemptFPS
         self.uniqueSubmittedFPS = uniqueSubmittedFPS ?? uniqueLayerEnqueueFPS ?? submittedFPS ?? layerEnqueueFPS ?? submitAttemptFPS
@@ -215,7 +215,7 @@ struct ClientStreamingAnomalySample {
             clientDisplayTickFPS: displayTickFPS,
             clientSubmitAttemptFPS: submitAttemptFPS,
             clientLayerAcceptedFPS: layerAcceptedFPS,
-            clientPresentedFPS: visibleFrameFPS,
+            clientPresentedFPS: presentedFPS,
             submittedFPS: submittedFPS,
             uniqueSubmittedFPS: uniqueSubmittedFPS,
             pendingFrameCount: pendingFrameCount,
@@ -359,7 +359,8 @@ func clientStreamingAnomalyDiagnostic(
         "submitAttempt=\(formattedFPS(sample.submitAttemptFPS))fps layerAccepted=\(formattedFPS(sample.layerAcceptedFPS))fps " +
         "layerEnqueueFPS=\(formattedFPS(sample.submittedFPS))fps " +
         "uniqueLayerEnqueueFPS=\(formattedFPS(sample.uniqueSubmittedFPS))fps " +
-        "visibleFrameFPS=\(formattedFPS(sample.visibleFrameFPS))fps " +
+        "visibleFrameFPS=\(formattedFPS(sample.presentedFPS))fps " +
+        "presentationAlias=\(formattedFPS(sample.presentedFPS))fps " +
         "submitted=\(formattedFPS(sample.submittedFPS))fps uniqueSubmitted=\(formattedFPS(sample.uniqueSubmittedFPS))fps " +
         "pending=\(sample.pendingFrameCount) pendingAge=\(formattedMs(sample.pendingFrameAgeMs))ms " +
         "pendingAgeP95=\(formattedMs(sample.pendingFrameAgeP95Ms))ms " +

@@ -40,7 +40,6 @@ extension StreamContext {
             let encodedFPS = Double(encodedFrameCount) / elapsed
             let idleEncodedFPS = Double(idleEncodedCount) / elapsed
             let averageEncodeMs = await encoder?.averageEncodeTimeMs
-            let encodedOutput = await encoder?.encodedOutputSnapshot()
             let resolvedAverageEncodeMs: Double? = if let averageEncodeMs, averageEncodeMs > 0 {
                 averageEncodeMs
             } else {
@@ -71,7 +70,6 @@ extension StreamContext {
                 policy: capturePolicy
             )
             await applyCaptureCadenceRecoveryIfNeeded(
-                captureTelemetry: captureTelemetry,
                 captureCadence: captureCadenceMetrics,
                 packetTelemetry: packetTelemetry,
                 averageEncodeMs: resolvedAverageEncodeMs,
@@ -87,23 +85,6 @@ extension StreamContext {
                 targetFrameRate: currentFrameRate,
                 enteredBitrate: enteredTargetBitrate,
                 currentBitrate: currentBitrate,
-                encoderRequestedBitrateBps: encodedOutput?.requestedBitrateBps,
-                encoderActualBitrateBps: encodedOutput?.actualBitrateBps,
-                encoderActualWindowMs: encodedOutput?.actualWindowMs,
-                encodedFrameBytesP50: encodedOutput?.frameBytesP50,
-                encodedFrameBytesP95: encodedOutput?.frameBytesP95,
-                encodedFrameBytesP99: encodedOutput?.frameBytesP99,
-                encodedKeyframeBytesP50: encodedOutput?.keyframeBytesP50,
-                encodedKeyframeBytesP95: encodedOutput?.keyframeBytesP95,
-                encodedKeyframeBytesP99: encodedOutput?.keyframeBytesP99,
-                encoderRateControlStrategy: encodedOutput?.rateControlStrategy,
-                encoderRateLimitBytes: encodedOutput?.rateLimitBytes,
-                encoderRateLimitWindowMs: encodedOutput?.rateLimitWindowMs,
-                effectiveStreamScale: Double(streamScale),
-                adaptiveStreamScaleReason: adaptiveStreamScaleReason,
-                encoderRetuneValidationResult: rateControlRetuneValidationResult,
-                encoderKeyframeForRetuneCount: keyframeForRetuneCount,
-                encoderSessionRecreationCount: encoderSessionRecreationCount,
                 requestedTargetBitrate: requestedTargetBitrate,
                 bitrateAdaptationCeiling: bitrateAdaptationCeiling,
                 startupBitrate: startupBitrate,
@@ -125,7 +106,6 @@ extension StreamContext {
                 packetPacerTotalSleepMs: packetTelemetry?.packetPacerSleepTotalMs,
                 packetPacerMaxSleepMs: packetTelemetry?.packetPacerSleepMaxMs,
                 packetPacerFrameMaxSleepMs: packetTelemetry?.packetPacerFrameMaxSleepMs,
-                mediaMaxPacketSize: mediaMaxPacketSize,
                 stalePacketDrops: packetTelemetry?.stalePacketDrops,
                 senderLocalDeadlineDrops: packetTelemetry?.senderLocalDeadlineDrops,
                 generationAbortDrops: packetTelemetry?.generationAbortDrops,

@@ -31,13 +31,9 @@ actor StreamPacketSender {
     nonisolated(unsafe) var queuedWorkItems: [QueuedWorkItem] = []
     nonisolated(unsafe) var queuedBytes: Int = 0
     nonisolated(unsafe) var dropNonKeyframesUntilKeyframe: Bool = false
-    nonisolated(unsafe) var dependencyRecoveryRequiresKeyframe: Bool = false
     nonisolated(unsafe) var latestKeyframeFrameNumber: UInt32 = 0
     nonisolated(unsafe) var latestKeyframeGeneration: UInt32 = 0
-    nonisolated(unsafe) var latestDependencyDropFrameNumber: UInt32 = 0
-    nonisolated(unsafe) var latestDependencyDropGeneration: UInt32 = 0
-    nonisolated(unsafe) var dependencyBaselineKeyframeFrameNumber: UInt32 = 0
-    nonisolated(unsafe) var dependencyBaselineKeyframeGeneration: UInt32 = 0
+    nonisolated(unsafe) var dependencyDropSuppressionDeadline: CFAbsoluteTime = 0
     nonisolated(unsafe) var queuedStalePacketDropCount: UInt64 = 0
     nonisolated(unsafe) var queuedSenderLocalDeadlineDropCount: UInt64 = 0
     nonisolated(unsafe) var queuedGenerationAbortDropCount: UInt64 = 0
@@ -52,8 +48,6 @@ actor StreamPacketSender {
     var pacerFrameSleepMaxMs: Int = 0
     var pacerSleepPacketCount: Int = 0
     var pacerLastLogTime: CFAbsoluteTime = 0
-    var awdlPressurePacingDeadline: CFAbsoluteTime = 0
-    var awdlPressurePacingReason: String?
     var sendStartDelayTotalMs: Double = 0
     var sendStartDelayMaxMs: Double = 0
     var sendStartDelayCount: UInt64 = 0
@@ -97,8 +91,6 @@ extension StreamPacketSender {
             resetQueueStorageLocked()
         }
         resetPacketPacerState(now: CFAbsoluteTimeGetCurrent())
-        awdlPressurePacingDeadline = 0
-        awdlPressurePacingReason = nil
         resetTelemetryWindow()
         sendTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
@@ -120,8 +112,6 @@ extension StreamPacketSender {
             resetQueueStorageLocked()
         }
         resetPacketPacerState(now: CFAbsoluteTimeGetCurrent())
-        awdlPressurePacingDeadline = 0
-        awdlPressurePacingReason = nil
         resetTelemetryWindow()
     }
 
@@ -150,52 +140,6 @@ extension StreamPacketSender {
         }
         resetPacketPacerState(now: CFAbsoluteTimeGetCurrent())
         MirageLogger.stream("Packet send queue reset (gen \(generation), \(reason))")
-    }
-
-    /// Drops queued sender work and advances generation for a freshness recovery transaction.
-    func resetQueueForFreshnessRecovery(reason: String) async -> QueueFreshnessResetResult {
-        generation &+= 1
-        let currentGeneration = generation
-        let result = queueLock.withLock {
-            let droppedItemCount = queuedWorkItems.count
-            let droppedNonKeyframeCount = queuedWorkItems.filter { !$0.item.isKeyframe }.count
-            let droppedKeyframeCount = droppedItemCount - droppedNonKeyframeCount
-            let droppedBytes = queuedBytes
-            resetQueueStorageLocked()
-            return QueueFreshnessResetResult(
-                generation: currentGeneration,
-                droppedItemCount: droppedItemCount,
-                droppedNonKeyframeCount: droppedNonKeyframeCount,
-                droppedKeyframeCount: droppedKeyframeCount,
-                droppedBytes: droppedBytes
-            )
-        }
-        resetPacketPacerState(now: CFAbsoluteTimeGetCurrent())
-        MirageLogger.stream(
-            "Packet send queue freshness reset (gen \(currentGeneration), \(reason), " +
-                "items=\(result.droppedItemCount), bytes=\(result.droppedBytes))"
-        )
-        return result
-    }
-
-    /// Holds AWDL media pacing in a low-burst profile while receiver feedback indicates burst sensitivity.
-    func activateAwdlPressurePacing(until deadline: CFAbsoluteTime, reason: String) {
-        let now = CFAbsoluteTimeGetCurrent()
-        guard deadline > now else { return }
-
-        let wasInactive = awdlPressurePacingDeadline <= now
-        let shouldLog = wasInactive || awdlPressurePacingReason != reason
-        awdlPressurePacingDeadline = max(awdlPressurePacingDeadline, deadline)
-        awdlPressurePacingReason = reason
-        if wasInactive {
-            resetPacketPacerState(now: now)
-        }
-
-        guard shouldLog else { return }
-        let holdMs = Int(max(0, awdlPressurePacingDeadline - now) * 1000)
-        MirageLogger.network(
-            "AWDL pressure pacing active for stream sender: reason=\(reason), hold=\(holdMs)ms"
-        )
     }
 
     /// Current queued byte count used by tests and telemetry.
@@ -240,12 +184,12 @@ extension StreamPacketSender {
 
         if isExpiredNonKeyframe(item, now: now) {
             queuedStalePacketDropCount &+= 1
-            markDependencyFrameDroppedLocked(item, reason: .expiredBeforeEnqueue)
+            markDependencyFrameDroppedLocked(item, reason: .expiredBeforeEnqueue, clientVisible: false)
             return .dropped
         }
 
         if item.isKeyframe {
-            recordDependencyBaselineKeyframeLocked(item)
+            extendDependencyDropSuppressionLocked(now: now)
             if latestKeyframeGeneration != item.generation || item.frameNumber >= latestKeyframeFrameNumber {
                 dropNonKeyframesUntilKeyframe = true
                 latestKeyframeFrameNumber = item.frameNumber
@@ -253,8 +197,7 @@ extension StreamPacketSender {
             }
             discardQueuedNonKeyframesLocked(countAsHoldDrops: true)
             discardSupersededQueuedKeyframesLocked(newestFrameNumber: item.frameNumber, generation: item.generation)
-        } else if dropNonKeyframesUntilKeyframe, !dependencyRecoveryRequiresKeyframe,
-                  latestKeyframeGeneration == item.generation,
+        } else if dropNonKeyframesUntilKeyframe, latestKeyframeGeneration == item.generation,
                   !hasQueuedKeyframeLocked(frameNumber: latestKeyframeFrameNumber, generation: latestKeyframeGeneration) {
             resetKeyframeTrackingLocked()
         }
@@ -302,7 +245,7 @@ extension StreamPacketSender {
         if isExpiredNonKeyframe(item, now: CFAbsoluteTimeGetCurrent()) {
             stalePacketDropCount &+= 1
             queueLock.withLock {
-                markDependencyFrameDroppedLocked(item, reason: .expiredBeforeSend)
+                markDependencyFrameDroppedLocked(item, reason: .expiredBeforeSend, clientVisible: false)
             }
             reduceQueuedBytes(accountedBytes)
             return
@@ -322,10 +265,8 @@ extension StreamPacketSender {
 
         if item.isKeyframe {
             queueLock.withLock {
-                recordDependencyBaselineKeyframeLocked(item)
-                if latestKeyframeGeneration == item.generation,
-                   latestKeyframeFrameNumber == item.frameNumber,
-                   keyframeSatisfiesDependencyRecoveryLocked(item) {
+                extendDependencyDropSuppressionLocked(now: CFAbsoluteTimeGetCurrent())
+                if latestKeyframeGeneration == item.generation, latestKeyframeFrameNumber == item.frameNumber {
                     resetKeyframeTrackingLocked()
                 }
             }

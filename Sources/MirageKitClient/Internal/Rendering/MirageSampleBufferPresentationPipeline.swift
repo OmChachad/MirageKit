@@ -64,8 +64,6 @@ final class MirageSampleBufferPresentationPipeline {
     private var maxRenderFPS: Int = 60
     private var appliedRefreshRateLock: Int = 0
     private var lastReportedDrawableMetrics: MirageDrawableMetrics?
-    private var lastLayoutBounds: CGRect?
-    private var lastLayoutScale: CGFloat = 0
 
     private static let maxDrawableWidth: CGFloat = 5120
     private static let maxDrawableHeight: CGFloat = 2880
@@ -159,16 +157,8 @@ final class MirageSampleBufferPresentationPipeline {
         scale: CGFloat,
         metricsContext: MirageDrawableMetricsContext = .empty
     ) {
-        let layoutChanged = layoutDidChange(bounds: bounds, scale: scale)
         displayLayer.frame = bounds
         displayLayer.contentsScale = scale
-        if layoutChanged, let streamID = configuration.mediaStreamID {
-            _ = MirageRenderStreamStore.shared.resetPresentation(
-                for: streamID,
-                dropPendingFrames: false,
-                reason: "surface-layout"
-            )
-        }
         publishDrawableMetricsIfChanged(
             viewSize: bounds.size,
             scaleFactor: scale,
@@ -218,10 +208,7 @@ final class MirageSampleBufferPresentationPipeline {
         maxRenderFPS = clamped
         presenter.setTargetFPS(clamped)
         applyDisplayRefreshRateLock(clamped)
-        Task { @MainActor [weak self] in
-            await Task.yield()
-            self?.onRefreshRateOverrideChange?(clamped)
-        }
+        onRefreshRateOverrideChange?(clamped)
     }
 
     func requestImmediateSubmission() {
@@ -280,22 +267,7 @@ final class MirageSampleBufferPresentationPipeline {
 
     private func publishDrawableMetrics(_ metrics: MirageDrawableMetrics) {
         lastReportedDrawableMetrics = metrics
-        Task { @MainActor [weak self] in
-            await Task.yield()
-            self?.onDrawableMetricsChanged?(metrics)
-        }
-    }
-
-    private func layoutDidChange(bounds: CGRect, scale: CGFloat) -> Bool {
-        defer {
-            lastLayoutBounds = bounds
-            lastLayoutScale = scale
-        }
-        guard let lastLayoutBounds else { return false }
-        let sizeChanged = abs(lastLayoutBounds.width - bounds.width) > 0.5 ||
-            abs(lastLayoutBounds.height - bounds.height) > 0.5
-        let scaleChanged = abs(lastLayoutScale - scale) > 0.001
-        return sizeChanged || scaleChanged
+        onDrawableMetricsChanged?(metrics)
     }
 
     // MARK: - Presentation
@@ -320,13 +292,6 @@ final class MirageSampleBufferPresentationPipeline {
     private func recoverPresentationPipeline() {
         let streamID = configuration.mediaStreamID
         MirageLogger.renderer("Recovering \(platformName) presentation pipeline for stream \(streamID.map(String.init) ?? "none")")
-        if let streamID {
-            _ = MirageRenderStreamStore.shared.resetPresentation(
-                for: streamID,
-                dropPendingFrames: true,
-                reason: "presentation-pipeline-recovery"
-            )
-        }
         presenter.setStreamID(streamID)
         presentationScheduler.setStreamID(streamID)
         presenter.resetPresentationState(

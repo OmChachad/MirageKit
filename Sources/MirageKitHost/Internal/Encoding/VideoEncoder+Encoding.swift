@@ -128,7 +128,6 @@ extension VideoEncoder {
             encodeStartTime: encodeStartTime,
             sessionVersion: currentSessionVersion,
             performanceTracker: performanceTracker,
-            encodedOutputTelemetry: encodedOutputTelemetry,
             completion: frameCompletionHandler,
             isProRes: isProRes,
             retainedSampleBuffer: frame.backingSampleBuffer,
@@ -284,7 +283,6 @@ extension VideoEncoder {
                 )
             }
 
-            info.encodedOutputTelemetry?.recordFrame(byteCount: data.count, isKeyframe: isKeyframe)
             info.handler?(data, isKeyframe, pts)
         }
 

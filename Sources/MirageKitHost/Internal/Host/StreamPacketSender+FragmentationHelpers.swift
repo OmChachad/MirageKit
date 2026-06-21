@@ -28,6 +28,12 @@ extension StreamPacketSender {
 
         if item.isKeyframe {
             if error == nil, !didDrop {
+                queueLock.withLock {
+                    extendDependencyDropSuppressionLocked(
+                        now: completedAt,
+                        duration: 1.0 / Double(max(1, item.targetFrameRate))
+                    )
+                }
                 let fragmentDurationMs = (completedAt - startedAt) * 1000
                 let roundedDuration = (fragmentDurationMs * 100).rounded() / 100
                 let bytesKB = Double(item.encodedData.count) / 1024.0
@@ -52,13 +58,15 @@ extension StreamPacketSender {
     func dropStaleNonKeyframeDuringFragmentation(
         item: WorkItem,
         remainingQueuedBytes: Int,
-        transportCompletionTracker: TransportCompletionTracker
+        transportCompletionTracker: TransportCompletionTracker,
+        fragmentsSubmitted: Int
     ) {
         stalePacketDropCount &+= 1
         queueLock.withLock {
             markDependencyFrameDroppedLocked(
                 item,
-                reason: .expiredDuringSend
+                reason: .expiredDuringSend,
+                clientVisible: fragmentsSubmitted > 0
             )
         }
         transportCompletionTracker.recordDrop()
@@ -78,7 +86,8 @@ extension StreamPacketSender {
         queueLock.withLock {
             markDependencyFrameDroppedLocked(
                 item,
-                reason: .oversizedFrame
+                reason: .oversizedFrame,
+                clientVisible: false
             )
         }
         MirageLogger.stream(

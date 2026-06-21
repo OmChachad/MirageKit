@@ -55,7 +55,6 @@ extension StreamContext {
         await scheduleCoalescedRecoveryKeyframe(
             reason: "Desktop resize resume",
             resetFrameNumber: true,
-            noteLoss: true,
             ignoreExistingInFlight: true
         )
         MirageLogger.stream("Desktop resize completion: encoding resumed")
@@ -126,8 +125,6 @@ extension StreamContext {
         frameInbox.discardAll()
         cachedStartupFrame = nil
         startupFrameCachingEnabled = false
-        dependencyRecoveryKeyframeRetryTask?.cancel()
-        dependencyRecoveryKeyframeRetryTask = nil
 
         if useVirtualDisplay {
             let expectedOwner: WindowSpaceManager.WindowBindingOwner?

@@ -33,8 +33,6 @@ final class HostReceiveLoop: @unchecked Sendable {
         case disconnect(ControlMessage)
         /// Client cancelled an in-flight stream setup.
         case cancelStreamSetup(ControlMessage)
-        /// Client acknowledged stream startup readiness.
-        case streamReady(ControlMessage)
         /// Receive loop reached a terminal state.
         case terminal(TerminalReason)
     }
@@ -239,8 +237,7 @@ final class HostReceiveLoop: @unchecked Sendable {
                     } else if message.type == .pong {
                         continue
                     } else {
-                        let shouldEnqueue = publishLifecycleSignalIfNeeded(for: message)
-                        guard shouldEnqueue else { continue }
+                        publishLifecycleSignalIfNeeded(for: message)
                         let enqueued = enqueueControl(message, state: &state)
                         if message.type == .sharedClipboardUpdate, enqueued {
                             state.clipboardInputBarrierDepth += 1
@@ -298,21 +295,15 @@ final class HostReceiveLoop: @unchecked Sendable {
         }
     }
 
-    /// Emits signals for control messages that need immediate host-side handling.
-    /// Returns whether the message should still enter the ordered control queue.
-    private func publishLifecycleSignalIfNeeded(for message: ControlMessage) -> Bool {
+    /// Emits lifecycle signals for control messages that need immediate host-side handling.
+    private func publishLifecycleSignalIfNeeded(for message: ControlMessage) {
         switch message.type {
         case .disconnect:
             onLifecycleSignal(.disconnect(message))
-            return true
         case .cancelStreamSetup:
             onLifecycleSignal(.cancelStreamSetup(message))
-            return true
-        case .streamReady:
-            onLifecycleSignal(.streamReady(message))
-            return false
         default:
-            return true
+            break
         }
     }
 

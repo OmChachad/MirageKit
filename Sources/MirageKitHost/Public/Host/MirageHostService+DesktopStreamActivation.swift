@@ -18,7 +18,7 @@ extension MirageHostService {
         _ activation: DesktopStreamActivation,
         virtualDisplaySetupGuardToken: inout UUID?
     )
-    async throws -> DesktopStreamActivationResult {
+    async throws -> ClientContext {
         let streamID = activation.streamID
         let clientContext = activation.clientContext
         let streamContext = activation.streamContext
@@ -60,13 +60,11 @@ extension MirageHostService {
             mode: activation.mode,
             startupRequestID: activation.startupRequestID
         )
-        let mediaSendProfile = await activeClientContext.controlChannel.session.mirageMediaSendProfile()
 
         do {
             try await startDesktopDisplayCapture(
                 activation,
                 activeVideoStream: activeVideoStream,
-                mediaSendProfile: mediaSendProfile,
                 excludedWindows: excludedWindows,
                 audioConfiguration: &effectiveAudioConfiguration
             )
@@ -79,10 +77,7 @@ extension MirageHostService {
             await stopDesktopStream(reason: .error, triggeredByExplicitStreamStop: false)
             throw error
         }
-        return DesktopStreamActivationResult(
-            activeClientContext: activeClientContext,
-            audioConfiguration: effectiveAudioConfiguration
-        )
+        return activeClientContext
     }
 
     /// Activates desktop audio when requested, falling back to video-only startup on failure.
@@ -202,7 +197,6 @@ extension MirageHostService {
     func startDesktopDisplayCapture(
         _ activation: DesktopStreamActivation,
         activeVideoStream: LoomMultiplexedStream,
-        mediaSendProfile: LoomQueuedUnreliableSendProfile,
         excludedWindows: [SCWindowWrapper],
         audioConfiguration: inout MirageAudioConfiguration
     ) async throws {
@@ -213,7 +207,7 @@ extension MirageHostService {
                 resolution: activation.captureResolution,
                 excludedWindows: excludedWindows,
                 sendPacket: { packetData, onComplete in
-                    activeVideoStream.sendUnreliableQueued(packetData, profile: mediaSendProfile) { error in
+                    activeVideoStream.sendUnreliableQueued(packetData) { error in
                         if error == nil {
                             self.markDesktopFirstVideoPacketIfNeeded(
                                 streamID: activation.streamID,
@@ -247,6 +241,13 @@ extension MirageHostService {
             await activation.streamContext.setCapturedAudioHandler(nil)
             try await startDesktopDisplay()
         }
+
+        audioConfiguration = try await waitForDesktopCaptureStartupReadiness(
+            streamContext: activation.streamContext,
+            mode: activation.mode,
+            clientID: activation.clientContext.client.id,
+            audioConfiguration: audioConfiguration
+        )
     }
 
     /// Marks the desktop stream once its first video packet is queued successfully.

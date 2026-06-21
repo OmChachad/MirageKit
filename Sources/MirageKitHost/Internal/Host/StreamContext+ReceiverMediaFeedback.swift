@@ -11,7 +11,7 @@ import MirageKit
 
 #if os(macOS)
 extension StreamContext {
-    func applyReceiverMediaFeedback(_ feedback: ReceiverMediaFeedbackMessage) async {
+    func applyReceiverMediaFeedback(_ feedback: ReceiverMediaFeedbackMessage) {
         let now = CFAbsoluteTimeGetCurrent()
         lastReceiverFeedbackTime = now
         receiverPresentationBacklogFrames = feedback.presentationBacklogFrames
@@ -23,7 +23,6 @@ extension StreamContext {
         guard let decision = transportController.update(
             with: feedback,
             currentFrameRate: currentFrameRate,
-            transportPathKind: transportPathKind,
             now: now
         ) else {
             return
@@ -35,21 +34,11 @@ extension StreamContext {
         )
         receiverFrameAdmissionTargetFPS = decision.frameAdmissionTargetFPS
         receiverFrameAdmissionDeadline = decision.frameAdmissionDeadline
-        if transportPathKind == .awdl, decision.awdlPacingDeadline > now {
-            await packetSender?.activateAwdlPressurePacing(
-                until: decision.awdlPacingDeadline,
-                reason: decision.awdlPacingTrigger.rawValue
-            )
-        }
 
-        if transportPathKind != .awdl ||
-            decision.frameAdmissionTargetFPS != nil ||
-            receiverFrameAdmissionLastLoggedTargetFPS != nil {
-            logReceiverFrameAdmissionChangeIfNeeded(
-                now: now,
-                trigger: decision.frameAdmissionTrigger
-            )
-        }
+        logReceiverFrameAdmissionChangeIfNeeded(
+            now: now,
+            trigger: decision.frameAdmissionTrigger
+        )
     }
 
     func receiverFrameAdmissionIsActive(now: CFAbsoluteTime) -> Bool {

@@ -47,7 +47,7 @@ extension VideoEncoder {
         colorDepth: MirageStreamColorDepth? = nil,
         pixelFormat: MiragePixelFormat? = nil
     ) -> Bool {
-        guard latencyMode == .lowestLatency || latencyMode == .balanced else { return false }
+        guard latencyMode == .lowestLatency else { return false }
         return standardLowLatencyUsesSunshineRateControl(
             streamKind: streamKind,
             colorDepth: colorDepth,
@@ -73,7 +73,7 @@ extension VideoEncoder {
         colorDepth: MirageStreamColorDepth? = nil,
         pixelFormat: MiragePixelFormat? = nil
     ) -> Bool {
-        (latencyMode == .lowestLatency || latencyMode == .balanced) &&
+        latencyMode == .lowestLatency &&
             shouldSuppressStandardLowLatencyRateControl(
                 streamKind: streamKind,
                 colorDepth: colorDepth,

@@ -126,7 +126,7 @@ struct ReceiverHealthControllerTests {
         let snapshot = healthySnapshot(activeQuality: 0.62)
         var action: MirageReceiverHealthController.Action = .none
 
-        for sampleIndex in 0 ..< 29 {
+        for sampleIndex in 0 ..< 7 {
             action = controller.advance(
                 snapshots: [snapshot],
                 currentBitrateBps: 60_000_000,
@@ -140,10 +140,10 @@ struct ReceiverHealthControllerTests {
             snapshots: [snapshot],
             currentBitrateBps: 60_000_000,
             ceilingBps: 128_000_000,
-            now: 58
+            now: 14
         )
 
-        #expect(action == .probe(targetBitrateBps: 66_000_000))
+        #expect(action == .probe(targetBitrateBps: 64_800_000))
     }
 
     @Test("Recent interaction defers probes while allowing severe backoff")
@@ -380,41 +380,6 @@ struct ReceiverHealthControllerTests {
         #expect(strongerBackoff == .backoff(targetBitrateBps: 30_600_000))
     }
 
-    @Test("Conservative proximity media failures back off quickly to floor")
-    func conservativeProximityMediaFailuresBackOffQuicklyToFloor() {
-        var controller = MirageReceiverHealthController(
-            promotionRecoveryMode: .conservativeProximity
-        )
-        var snapshot = healthySnapshot(activeQuality: 0.62)
-        snapshot.clientReassemblerIncompleteFrameTimeouts = 1
-        snapshot.clientReassemblerIncompleteFrameNoProgressTimeouts = 1
-        snapshot.clientReassemblerMissingFragmentTimeouts = 8
-
-        let firstAction = controller.advance(
-            snapshots: [snapshot],
-            currentBitrateBps: 48_000_000,
-            ceilingBps: 80_000_000,
-            now: 0
-        )
-        let repeatedAction = controller.advance(
-            snapshots: [snapshot],
-            currentBitrateBps: 33_600_000,
-            ceilingBps: 80_000_000,
-            now: 2.1
-        )
-        snapshot.clientReassemblerMissingFragmentTimeouts = 160
-        let severeRepeatedAction = controller.advance(
-            snapshots: [snapshot],
-            currentBitrateBps: 20_160_000,
-            ceilingBps: 80_000_000,
-            now: 4.2
-        )
-
-        #expect(firstAction == .backoff(targetBitrateBps: 33_600_000))
-        #expect(repeatedAction == .backoff(targetBitrateBps: 20_160_000))
-        #expect(severeRepeatedAction == .backoff(targetBitrateBps: 12_000_000))
-    }
-
     @Test("P-frame latency pressure backs off without transport loss counters")
     func pFrameLatencyPressureBacksOffWithoutTransportLossCounters() {
         var controller = MirageReceiverHealthController()
@@ -565,7 +530,7 @@ struct ReceiverHealthControllerTests {
             let decision = controller.advance(
                 snapshots: [snapshot],
                 currentPathKind: .awdl,
-                currentBitrateBps: 12_000_000,
+                currentBitrateBps: 40_000_000,
                 now: 92 + Double(sampleIndex * 2)
             )
             #expect(decision == nil)
@@ -574,7 +539,7 @@ struct ReceiverHealthControllerTests {
         let emittedDecision = controller.advance(
             snapshots: [snapshot],
             currentPathKind: .awdl,
-            currentBitrateBps: 12_000_000,
+            currentBitrateBps: 40_000_000,
             now: 98
         )
         let decision = try #require(emittedDecision)
@@ -602,21 +567,22 @@ struct ReceiverHealthControllerTests {
         )
         #expect(earlyDecision == nil)
 
-        let secondEarlyDecision = controller.advance(
+        _ = controller.advance(
             snapshots: [snapshot],
             currentPathKind: .awdl,
             currentBitrateBps: 70_000_000,
             now: 32
         )
-        let thirdEarlyDecision = controller.advance(
+        let emittedDecision = controller.advance(
             snapshots: [snapshot],
             currentPathKind: .awdl,
             currentBitrateBps: 70_000_000,
             now: 34
         )
+        let decision = try #require(emittedDecision)
 
-        #expect(secondEarlyDecision == nil)
-        #expect(thirdEarlyDecision == nil)
+        #expect(decision.severeSampleCount >= 2)
+        #expect(decision.reason.contains("receive gap"))
     }
 
     func healthySnapshot(activeQuality: Double) -> MirageClientMetricsSnapshot {

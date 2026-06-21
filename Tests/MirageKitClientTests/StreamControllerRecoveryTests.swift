@@ -9,7 +9,6 @@
 
 @testable import MirageKit
 @testable import MirageKitClient
-import CoreGraphics
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -356,41 +355,6 @@ struct StreamControllerRecoveryTests {
         await controller.maybeLogDecodeBackpressure(queueDepth: 6)
         try await Task.sleep(for: .milliseconds(150))
         #expect(keyframeCounter.value == 0)
-
-        await controller.stop()
-    }
-
-    @Test("Decode queue dependency break enters keyframe wait")
-    func decodeQueueDependencyBreakEntersKeyframeWait() async throws {
-        let keyframeCounter = StreamControllerLockedCounter()
-        let releaseCounter = StreamControllerLockedCounter()
-        let controller = StreamController(streamID: 3, maxPayloadSize: 1200)
-        await controller.setCallbacks(
-            onKeyframeNeeded: {
-                keyframeCounter.increment()
-                return true
-            }
-        )
-
-        let droppedFrame = StreamController.FrameData(
-            data: Data([0x01]),
-            presentationTime: .zero,
-            isKeyframe: false,
-            contentRect: .zero,
-            releaseBuffer: {
-                releaseCounter.increment()
-            }
-        )
-
-        await controller.handleDecodeQueueDependencyBreak(
-            droppedFrame: droppedFrame,
-            queueDepth: StreamController.maxQueuedFrames
-        )
-
-        #expect(await controller.decodeQueueRequiresKeyframe)
-        #expect(await controller.reassembler.isAwaitingKeyframe)
-        #expect(releaseCounter.value == 1)
-        #expect(keyframeCounter.value == 1)
 
         await controller.stop()
     }

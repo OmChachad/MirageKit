@@ -62,17 +62,11 @@ extension StreamContext {
         }
 
         if (bitrateChanged || bitrateAdaptationCeilingChanged), !colorDepthChanged, !frameRateChanged {
-            let previousBitrate = encoderConfig.bitrate
             encoderConfig = updatedConfig
-            currentTargetBitrateBps = encoderConfig.bitrate
             requestedTargetBitrate = updatedRequestedTargetBitrate
             if bitrateChanged {
                 await packetSender?.setTargetBitrateBps(encoderConfig.bitrate)
                 await encoder?.updateBitrate(encoderConfig.bitrate)
-                scheduleRateControlRetuneValidation(
-                    previousBitrate: previousBitrate,
-                    targetBitrate: encoderConfig.bitrate
-                )
             }
             if currentEncodedSize != .zero {
                 await applyDerivedQuality(for: currentEncodedSize, logLabel: "Bitrate update")
@@ -95,7 +89,6 @@ extension StreamContext {
         resetPipelineStateForReconfiguration(reason: "encoder settings update")
 
         encoderConfig = updatedConfig
-        currentTargetBitrateBps = encoderConfig.bitrate
         requestedTargetBitrate = updatedRequestedTargetBitrate
         ultraValidationFailureHandled = false
         ultraValidationSuccessLogged = false
@@ -295,13 +288,6 @@ extension StreamContext {
         let clampedScale = StreamContext.clampStreamScale(newScale)
         let rollbackSnapshot = makeResizeRollbackSnapshot()
         let previousScale = streamScale
-        let scaleReason = if clampedScale < previousScale {
-            "adaptive-downscale-client-requested"
-        } else if clampedScale > previousScale {
-            "adaptive-restore-client-requested"
-        } else {
-            adaptiveStreamScaleReason
-        }
 
         let derivedBaseSize: CGSize
         if baseCaptureSize != .zero { derivedBaseSize = baseCaptureSize } else if previousScale > 0 {
@@ -329,7 +315,6 @@ extension StreamContext {
         }
 
         requestedStreamScale = clampedScale
-        adaptiveStreamScaleReason = scaleReason
 
         isResizing = true
         defer { isResizing = false }

@@ -335,8 +335,7 @@ extension MirageClientService {
             guard let controlChannel else {
                 throw MirageError.protocolError("Control channel unavailable")
             }
-            if deliveryMode == .droppableRealtime,
-               transportKind == .udp || transportKind == .quic {
+            if deliveryMode == .droppableRealtime, transportKind == .udp {
                 try await controlChannel.sendSerializedUnreliable(data)
                 return
             }
@@ -369,12 +368,11 @@ extension MirageClientService {
         guard !MirageLatencyOptions.disablePriorityInput() else {
             return false
         }
-        let transportKind = await controlChannel.session.context?.transportKind
-        guard transportKind == .udp || transportKind == .quic else {
+        guard await controlChannel.session.context?.transportKind == .udp else {
             return false
         }
-        // Keep priority input on local/proximity paths until remote congestion
-        // and path-health behavior are validated.
+        // TODO: Enable priority input for remote UDP after remote congestion and
+        // path-health behavior are validated. For now, keep this to local links.
         guard let pathSnapshot = await controlChannel.session.pathSnapshot else {
             return isLocalEndpoint(await controlChannel.session.remoteEndpoint)
         }

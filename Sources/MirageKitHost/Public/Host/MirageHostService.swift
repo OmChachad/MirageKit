@@ -5,13 +5,13 @@
 //  Created by Ethan Lipnik on 1/2/26.
 //
 
-import Combine
 import CoreMedia
 import Dispatch
 import Foundation
 import Loom
 import MirageBootstrapShared
 import Network
+import Observation
 import MirageKit
 
 #if os(macOS)
@@ -20,22 +20,23 @@ import ApplicationServices
 import ScreenCaptureKit
 
 /// Main entry point for hosting window streams (macOS only)
+@Observable
 @MainActor
-public final class MirageHostService: ObservableObject {
+public final class MirageHostService {
     /// Available windows for streaming
-    @Published public internal(set) var availableWindows: [MirageWindow] = []
+    public internal(set) var availableWindows: [MirageWindow] = []
 
     /// Currently active streams
-    @Published public internal(set) var activeStreams: [MirageStreamSession] = []
+    public internal(set) var activeStreams: [MirageStreamSession] = []
 
     /// Connected clients
-    @Published public internal(set) var connectedClients: [MirageConnectedClient] = []
+    public internal(set) var connectedClients: [MirageConnectedClient] = []
 
     /// Current host state
-    @Published public internal(set) var state: HostState = .idle
+    public internal(set) var state: HostState = .idle
 
     /// Current session state (locked, unlocked, sleeping, etc.)
-    @Published public internal(set) var sessionState: LoomSessionAvailability = .ready
+    public internal(set) var sessionState: LoomSessionAvailability = .ready
 
     /// Whether shared clipboard sync is enabled for eligible active sessions.
     public var sharedClipboardEnabled: Bool = false {
@@ -57,25 +58,25 @@ public final class MirageHostService: ObservableObject {
     }
 
     /// Whether battery-based low-power policy is currently supported on this host device.
-    @Published public internal(set) var encoderLowPowerSupportsBatteryPolicy: Bool = false
+    public internal(set) var encoderLowPowerSupportsBatteryPolicy: Bool = false
 
     /// Whether the host encoder is currently using low-power mode.
-    @Published public internal(set) var isEncoderLowPowerModeActive: Bool = false
+    public internal(set) var isEncoderLowPowerModeActive: Bool = false
 
     /// Effective cursor presentation for the active desktop stream.
-    @Published public internal(set) var desktopCursorPresentation: MirageDesktopCursorPresentation = .simulatedCursor
+    public internal(set) var desktopCursorPresentation: MirageDesktopCursorPresentation = .simulatedCursor
 
     /// Latest client-owned stream-option state mirrored back to the host UI.
-    @Published public internal(set) var remoteClientStreamStatusOverlayEnabled = false
+    public internal(set) var remoteClientStreamStatusOverlayEnabled = false
 
     /// Latest client-owned stream-options display mode mirrored back to the host UI.
-    @Published public internal(set) var remoteClientStreamOptionsDisplayMode: MirageStreamOptionsDisplayMode = .inStream
+    public internal(set) var remoteClientStreamOptionsDisplayMode: MirageStreamOptionsDisplayMode = .inStream
 
     /// Whether the connected client currently exposes desktop cursor lock controls.
-    @Published public internal(set) var remoteClientDesktopCursorLockAvailable = false
+    public internal(set) var remoteClientDesktopCursorLockAvailable = false
 
     /// Latest client-owned desktop cursor lock mode mirrored back to the host UI.
-    @Published public internal(set) var remoteClientDesktopCursorLockMode: MirageDesktopCursorLockMode = .off
+    public internal(set) var remoteClientDesktopCursorLockMode: MirageDesktopCursorLockMode = .off
 
     /// Callback fired when host battery-policy support changes.
     public var onEncoderLowPowerBatteryPolicySupportChanged: ((Bool) -> Void)?
@@ -118,7 +119,7 @@ public final class MirageHostService: ObservableObject {
         }
     }
 
-    private var cachedPermissionManager: MirageAccessibilityPermissionManager?
+    @ObservationIgnored private var cachedPermissionManager: MirageAccessibilityPermissionManager?
 
     /// Accessibility permission manager for host UI permission state.
     public var permissionManager: MirageAccessibilityPermissionManager {
@@ -131,7 +132,7 @@ public final class MirageHostService: ObservableObject {
     }
 
     /// Whether the most recent capture inventory attempt hit an explicit screen-recording denial.
-    @Published public internal(set) var lastScreenRecordingPermissionDenied = false
+    public internal(set) var lastScreenRecordingPermissionDenied = false
 
     /// Window controller for host window management.
     public let windowController = MirageHostWindowController()
@@ -149,10 +150,10 @@ public final class MirageHostService: ObservableObject {
     }
 
     /// Bound local port for the remote QUIC control listener.
-    @Published public internal(set) var remoteControlPort: UInt16?
+    public internal(set) var remoteControlPort: UInt16?
 
     /// Whether the remote QUIC control listener is currently ready to accept connections.
-    @Published public internal(set) var remoteControlListenerReady = false
+    public internal(set) var remoteControlListenerReady = false
 
     /// Whether the host can currently accept a new client session.
     public var allowsNewClientConnections: Bool {
@@ -197,9 +198,9 @@ public final class MirageHostService: ObservableObject {
     /// Stable host identifier advertised during discovery and bootstrap.
     var hostID: UUID = .init()
     /// Color-depth modes the host currently advertises to clients.
-    @Published public internal(set) var supportedColorDepths: [MirageStreamColorDepth] = [.standard, .pro]
+    public internal(set) var supportedColorDepths: [MirageStreamColorDepth] = [.standard, .pro]
     /// Whether the host currently advertises ProRes 4444 app/window stream support.
-    @Published public internal(set) var supportsProRes4444 = false
+    public internal(set) var supportsProRes4444 = false
     let localNetworkMonitor = MirageLocalNetworkMonitor(label: "host")
     /// Power-state monitor used by the encoder low-power policy extension.
     let encoderPowerStateMonitor = MiragePowerStateMonitor()
@@ -401,13 +402,9 @@ public final class MirageHostService: ObservableObject {
     /// Host-authoritative generation for desktop presentation updates.
     var desktopPresentationGeneration: UInt64 = 0
     /// Debounced task refreshing desktop display topology.
-    nonisolated(unsafe) var desktopDisplayTopologyRefreshTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) var desktopDisplayTopologyRefreshTask: Task<Void, Never>?
     /// Deferred cleanup task for virtual displays created during desktop startup.
-    nonisolated(unsafe) var deferredDesktopStartupDisplayCleanupTask: Task<Void, Never>?
-    /// Cancellable cleanup task for display restoration after an established desktop stream stops.
-    nonisolated(unsafe) var deferredDesktopDisplayCleanupTask: Task<Void, Never>?
-    /// Generation token invalidating stale deferred desktop display cleanup work.
-    var desktopDisplayCleanupGeneration: UInt64 = 0
+    @ObservationIgnored nonisolated(unsafe) var deferredDesktopStartupDisplayCleanupTask: Task<Void, Never>?
 
     /// Request-scoped stream setups cancelled before a stream ID is established.
     var cancelledStreamSetupRequestIDs: Set<StreamSetupCancellationKey> = []
@@ -502,17 +499,17 @@ public final class MirageHostService: ObservableObject {
     /// Disk-backed app icon catalog cache.
     let appIconCatalogStore = HostAppIconCatalogStore()
     /// Host shared-clipboard bridge for active clients.
-    var sharedClipboardBridge: MirageHostSharedClipboardBridge?
+    @ObservationIgnored var sharedClipboardBridge: MirageHostSharedClipboardBridge?
     /// Latest shared-clipboard enablement status per client.
-    var sharedClipboardStatusByClientID: [UUID: Bool] = [:]
+    @ObservationIgnored var sharedClipboardStatusByClientID: [UUID: Bool] = [:]
     /// Chunk reassembler for incoming shared-clipboard payloads.
-    var clipboardChunkBuffer = MirageSharedClipboardChunkBuffer()
+    @ObservationIgnored var clipboardChunkBuffer = MirageSharedClipboardChunkBuffer()
 
     /// Menu bar passthrough monitor for forwarding host app menu state.
     let menuBarMonitor = MenuBarMonitor()
 
     /// Window activation (robust multi-method for headless Macs)
-    let windowActivator: WindowActivator = .forCurrentEnvironment()
+    @ObservationIgnored let windowActivator: WindowActivator = .forCurrentEnvironment()
 
     /// Lights Out (curtain) preference for app/window and desktop streams.
     public var lightsOutEnabled: Bool = false {
@@ -541,7 +538,7 @@ public final class MirageHostService: ObservableObject {
     public var lockHostHandler: (@MainActor () -> Void)?
 
     /// Called when the Lights Out emergency shortcut is triggered.
-    public var onLightsOutEmergencyShortcut: (@MainActor () async -> Void)? {
+    @ObservationIgnored public var onLightsOutEmergencyShortcut: (@MainActor () async -> Void)? {
         didSet {
             lightsOutController.onEmergencyShortcut = onLightsOutEmergencyShortcut
         }
@@ -559,10 +556,10 @@ public final class MirageHostService: ObservableObject {
         }
     }
 
-    let lightsOutController = HostLightsOutController()
-    let hostAudioMuteController = HostAudioMuteController()
-    var stageManagerController = HostStageManagerController()
-    nonisolated(unsafe) var screenParametersObserver: NSObjectProtocol?
+    @ObservationIgnored let lightsOutController = HostLightsOutController()
+    @ObservationIgnored let hostAudioMuteController = HostAudioMuteController()
+    @ObservationIgnored var stageManagerController = HostStageManagerController()
+    @ObservationIgnored nonisolated(unsafe) var screenParametersObserver: NSObjectProtocol?
     var appStreamingStageManagerNeedsRestore: Bool = false
     var appStreamingStageManagerPreparationInProgress: Bool = false
 
@@ -576,7 +573,7 @@ public final class MirageHostService: ObservableObject {
     nonisolated let inputStreamCache = InputStreamCache()
 
     /// Fast input handler called on `inputQueue`, outside the main actor, for lowest-latency event delivery.
-    public nonisolated(unsafe) var onInputEvent: ((
+    @ObservationIgnored public nonisolated(unsafe) var onInputEvent: ((
         _ event: MirageInputEvent,
         _ window: MirageWindow,
         _ client: MirageConnectedClient
@@ -584,7 +581,7 @@ public final class MirageHostService: ObservableObject {
         -> Void)?
 
     var controlMessageHandlers: [ControlMessageType: ControlMessageHandler] = [:]
-    nonisolated(unsafe) var diagnosticsContextProviderToken: LoomDiagnosticsContextProviderToken?
+    @ObservationIgnored nonisolated(unsafe) var diagnosticsContextProviderToken: LoomDiagnosticsContextProviderToken?
 
     /// Creates a host service with optional identity and transport configuration overrides.
     public init(

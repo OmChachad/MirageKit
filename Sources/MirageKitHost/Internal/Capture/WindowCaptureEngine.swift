@@ -26,7 +26,6 @@ actor WindowCaptureEngine {
     var currentFrameRate: Int
     let usesDisplayRefreshCadence: Bool
     var currentDisplayRefreshRate: Int?
-    var minimumFrameIntervalPolicy: MinimumFrameIntervalPolicy = .automatic
     var admissionDropper: (@Sendable () -> Bool)?
     var pendingKeyframeRequest: CaptureKeyframeRequestReason?
     var captureStallStageHandler: (@Sendable (CaptureStreamOutput.StallStage) -> Void)?
@@ -97,7 +96,7 @@ actor WindowCaptureEngine {
     init(
         configuration: MirageEncoderConfiguration,
         capturePressureProfile: CapturePressureProfile = .baseline,
-        latencyMode: MirageStreamLatencyMode = .balanced,
+        latencyMode: MirageStreamLatencyMode = .lowestLatency,
         hostBufferingPolicy: MirageHostBufferingPolicy = .stability,
         captureFrameRate: Int? = nil,
         usesDisplayRefreshCadence: Bool = false
@@ -172,7 +171,6 @@ actor WindowCaptureEngine {
             effectiveCaptureRate: captureRate,
             minimumFrameIntervalRate: captureRate,
             usesNativeRefreshMinimumFrameInterval: usesNativeRefreshInterval,
-            minimumFrameIntervalPolicy: minimumFrameIntervalPolicy,
             sckQueueDepth: sckQueueDepth,
             usesDisplayRefreshCadence: usesDisplayRefreshCadence,
             displayRefreshRate: currentDisplayRefreshRate
@@ -241,9 +239,6 @@ actor WindowCaptureEngine {
     func captureDisplayStartupSeedFrame() async -> CapturedFrame? {
         guard captureMode == .display,
               let config = captureSessionConfig else {
-            return nil
-        }
-        guard #available(macOS 14.0, *) else {
             return nil
         }
 

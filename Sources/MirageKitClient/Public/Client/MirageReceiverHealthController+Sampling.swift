@@ -91,9 +91,7 @@ extension MirageReceiverHealthController {
         let clientForwardGapTimeouts = snapshot.clientReassemblerForwardGapTimeouts
         let clientPFrameCompletionLatencyP95Ms = snapshot.clientPFrameCompletionLatencyP95Ms
         let clientLatePFrameCompletionCount = snapshot.clientLatePFrameCompletionCount
-        let receiverMediaDeliveryFailureCount = clientIncompleteFrameTimeouts +
-            clientMissingFragmentTimeouts +
-            clientForwardGapTimeouts
+        let receiverMediaDeliveryFailureCount = clientIncompleteFrameTimeouts + clientForwardGapTimeouts
         let receiverMediaDeliveryFailure = receiverMediaDeliveryFailureCount > 0
 
         let queueStress = queueBytes >= Self.sendQueueStressBytes

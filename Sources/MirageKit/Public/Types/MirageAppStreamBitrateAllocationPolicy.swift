@@ -21,7 +21,7 @@ public enum MirageAppStreamBitrateAllocationPolicy: String, Codable, Sendable, C
         case .splitEvenly:
             "Split Evenly"
         case .prioritizeActiveWindow:
-            "Favor Active Window"
+            "Prioritize Active Window"
         }
     }
 }

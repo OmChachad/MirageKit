@@ -79,37 +79,12 @@ extension WindowCaptureEngine {
     ]
 
     /// Restarts capture from the retained session configuration after a stall or keyframe recovery trigger.
-    @discardableResult
-    func restartCapture(reason: String) async -> Bool {
-        await restartCapture(reason: reason, bypassCooldown: false)
-    }
-
-    /// Retries high-refresh desktop capture with ScreenCaptureKit's native display cadence.
-    func retryNativeMinimumFrameIntervalForDeliveryValidation(reason: String) async {
-        guard captureMode == .display,
-              currentFrameRate >= 120 else {
-            return
-        }
-        minimumFrameIntervalPolicy = .nativeRefresh
-        MirageLogger.capture(
-            "event=sck_delivery_validation action=retry_native_minimum_frame_interval targetFPS=\(currentFrameRate) reason=\(reason)"
-        )
-        await restartCapture(reason: reason, bypassCooldown: true)
-    }
-
-    /// Restarts display capture for validation recovery without the generic stall-restart cooldown.
-    @discardableResult
-    func restartCaptureForDeliveryValidation(reason: String) async -> Bool {
-        await restartCapture(reason: reason, bypassCooldown: true)
-    }
-
-    @discardableResult
-    private func restartCapture(reason: String, bypassCooldown: Bool) async -> Bool {
+    func restartCapture(reason: String) async {
         cancelScheduledCaptureRestart(reason: "restart_begin")
-        guard !isRestarting else { return false }
-        guard let config = captureSessionConfig, let mode = captureMode else { return false }
-        guard isCapturing else { return false }
-        guard let onFrame = capturedFrameHandler else { return false }
+        guard !isRestarting else { return }
+        guard let config = captureSessionConfig, let mode = captureMode else { return }
+        guard isCapturing else { return }
+        guard let onFrame = capturedFrameHandler else { return }
         let onAudio = capturedAudioHandler
         let now = CFAbsoluteTimeGetCurrent()
 
@@ -129,7 +104,7 @@ extension WindowCaptureEngine {
             multiplier: restartBackoffMultiplier,
             cap: restartCooldownCap
         )
-        if lastRestartAttemptTime > 0, !bypassCooldown {
+        if lastRestartAttemptTime > 0 {
             let elapsed = now - lastRestartAttemptTime
             if elapsed <= requiredCooldown {
                 let remainingMs = Int(((requiredCooldown - elapsed) * 1000).rounded())
@@ -137,7 +112,7 @@ extension WindowCaptureEngine {
                     .capture(
                         "Capture restart suppressed (\(reason)); cooldown \(remainingMs)ms remaining (streak \(restartStreak))"
                     )
-                return false
+                return
             }
         }
 
@@ -161,11 +136,10 @@ extension WindowCaptureEngine {
         MirageLogger
             .capture(
                 "event=restart_executed reason=\(reason) streak=\(activeRestartStreak) " +
-                    "escalate=\(shouldEscalateRecovery) nextCooldownMs=\(Int((nextCooldown * 1000).rounded())) " +
-                    "bypassCooldown=\(bypassCooldown)"
+                    "escalate=\(shouldEscalateRecovery) nextCooldownMs=\(Int((nextCooldown * 1000).rounded()))"
             )
 
-        if mode == .display, !bypassCooldown,
+        if mode == .display,
            let streamOutput {
             let cancellationGrace = activeStallPolicy.cancellationGrace
             if streamOutput.isRecentlyRecovered(within: cancellationGrace) {
@@ -174,21 +148,21 @@ extension WindowCaptureEngine {
                     .capture(
                         "event=restart_canceled reason=frames_resumed_before_stop graceMs=\(graceMs) source=\(reason)"
                     )
-                return false
+                return
             }
         }
 
         await stopCapture(clearSessionState: false)
         guard restartGeneration == self.restartGeneration else {
             MirageLogger.capture("event=restart_canceled reason=stream_shutdown source=\(reason)")
-            return false
+            return
         }
 
         let resolvedConfig = await resolveCaptureTargetsForRestart(config: config, mode: mode)
         captureSessionConfig = resolvedConfig
         guard restartGeneration == self.restartGeneration else {
             MirageLogger.capture("event=restart_canceled reason=stream_shutdown source=\(reason)")
-            return false
+            return
         }
 
         do {
@@ -230,7 +204,6 @@ extension WindowCaptureEngine {
                 .capture(
                     "event=restart_complete reason=\(reason) streak=\(activeRestartStreak) mode=\(mode == .display ? "display" : "window")"
                 )
-            return true
         } catch {
             let nsError = error as NSError
             let isStaleWindowOrDisplay = nsError.domain == "CoreGraphicsErrorDomain" && nsError.code == 1003
@@ -240,7 +213,7 @@ extension WindowCaptureEngine {
             } else if isTransientSCKitError {
                 MirageLogger.capture("Capture restart deferred (transient SCKit error -3818): \(error)")
                 scheduleCaptureRestart(reason: "sck_transient_retry", debounce: 1.0)
-                return false
+                return
             } else {
                 MirageLogger.error(.capture, error: error, message: "Capture restart failed: ")
             }
@@ -251,7 +224,6 @@ extension WindowCaptureEngine {
             pendingKeyframeRequest = nil
             restartStreak = 0
             lastRestartAttemptTime = 0
-            return false
         }
     }
 }

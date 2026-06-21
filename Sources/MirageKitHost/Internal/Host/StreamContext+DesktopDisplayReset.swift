@@ -97,7 +97,6 @@ extension StreamContext {
         } else {
             await scheduleCoalescedRecoveryKeyframe(
                 reason: "Desktop resize reset",
-                noteLoss: true,
                 ignoreExistingInFlight: true
             )
         }

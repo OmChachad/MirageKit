@@ -50,7 +50,7 @@ extension StreamController {
                 displayTickFPS: renderTelemetry.displayTickFPS,
                 submitAttemptFPS: renderTelemetry.submitAttemptFPS,
                 layerAcceptedFPS: renderTelemetry.layerAcceptedFPS,
-                visibleFrameFPS: renderTelemetry.visibleFrameFPS,
+                presentedFPS: renderTelemetry.presentedFPS,
                 submittedFPS: renderTelemetry.submittedFPS,
                 uniqueSubmittedFPS: renderTelemetry.uniqueSubmittedFPS,
                 pendingFrameCount: renderTelemetry.pendingFrameCount,

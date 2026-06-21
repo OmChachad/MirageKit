@@ -19,7 +19,6 @@ extension MirageHostService {
 
         deferredDesktopStartupDisplayCleanupTask?.cancel()
         deferredDesktopStartupDisplayCleanupTask = nil
-        cancelDeferredDesktopDisplayCleanupForReuse(reason: "new_desktop_stream_start")
 
         if let currentOwnerClientID = desktopStreamClientContext?.client.id,
            desktopStreamContext != nil,
@@ -113,7 +112,6 @@ extension MirageHostService {
             capturePressureProfile: request.capturePressureProfile,
             latencyMode: request.latencyMode,
             hostBufferingPolicy: request.hostBufferingPolicy,
-            transportPathKind: request.transportPathKind,
             enteredBitrate: request.enteredBitrate,
             bitrateAdaptationCeiling: request.bitrateAdaptationCeiling,
             encoderMaxWidth: request.encoderMaxWidth,

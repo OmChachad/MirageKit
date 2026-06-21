@@ -55,7 +55,6 @@ extension StreamContext {
         freshnessBurstActive = false
         startupFrameCachingEnabled = false
         captureCadenceRecoveryPolicy.reset()
-        screenCaptureDeliveryRecovery.reset()
     }
 
     /// Restores latency-burst capture queue overrides and disables burst drain mode.

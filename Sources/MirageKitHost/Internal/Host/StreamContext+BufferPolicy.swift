@@ -43,17 +43,6 @@ extension StreamContext {
                 maxInFlightFramesCap: 1
             )
         }
-        if latencyMode == .balanced, hostBufferingPolicy == .freshestFrame {
-            let highRefresh = frameRate >= 90
-            let cap = highRefresh ? 3 : 2
-            let initialInFlight = highRefresh ? 2 : 1
-            return StreamBufferPolicy(
-                bufferDepth: cap,
-                initialInFlightFrames: initialInFlight,
-                minimumInFlightFrames: initialInFlight,
-                maxInFlightFramesCap: cap
-            )
-        }
 
         let usesDesktopLowLatency60HzBufferPolicy = usesStandardDesktopLowLatency60HzBufferPolicy(
             streamKind: streamKind,
@@ -104,9 +93,6 @@ extension StreamContext {
     -> Int {
         if useLowLatencyPipeline { return frameRate >= 120 ? 2 : 1 }
         switch latencyMode {
-        case .balanced:
-            if frameRate >= 90 { return 3 }
-            return 2
         case .smoothest:
             if frameRate >= 120 { return 12 }
             if frameRate >= 60 { return 3 }
@@ -127,9 +113,6 @@ extension StreamContext {
     -> Int {
         if useLowLatencyPipeline { return frameRate >= 120 ? 2 : 1 }
         switch latencyMode {
-        case .balanced:
-            if frameRate >= 90 { return 3 }
-            return 2
         case .smoothest:
             if frameRate >= 120 { return 8 }
             if frameRate >= 60 { return 3 }
@@ -149,9 +132,6 @@ extension StreamContext {
     -> Int {
         if useLowLatencyPipeline { return 1 }
         switch latencyMode {
-        case .balanced:
-            if frameRate >= 90 { return 2 }
-            return 1
         case .smoothest:
             if frameRate >= 120 { return 2 }
             if frameRate >= 90 { return 2 }
@@ -185,9 +165,6 @@ extension StreamContext {
     ) -> Int {
         if latencyMode == .lowestLatency, hostBufferingPolicy == .freshestFrame {
             return 1
-        }
-        if latencyMode == .balanced, hostBufferingPolicy == .freshestFrame {
-            return frameRate >= 90 ? 3 : 2
         }
         if usesStandardDesktopLowLatency60HzBufferPolicy(
             streamKind: streamKind,

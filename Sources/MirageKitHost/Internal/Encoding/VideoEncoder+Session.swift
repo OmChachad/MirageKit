@@ -92,47 +92,25 @@ extension VideoEncoder {
 
     private func applyBitrateSettings(_ session: VTCompressionSession) {
         guard let targetBitrate = configuration.bitrate, targetBitrate > 0 else {
-            encodedOutputTelemetry.updateRateControl(
-                requestedBitrateBps: nil,
-                strategy: .none,
-                rateLimit: nil
-            )
             return
         }
         let rateLimit = Self.dataRateLimit(
             targetBitrateBps: targetBitrate,
             targetFrameRate: configuration.targetFrameRate
         )
-        _ = clearPropertyIfPresent(session, key: kVTCompressionPropertyKey_ConstantBitRate)
-        let averageApplied = setProperty(
-            session,
-            key: kVTCompressionPropertyKey_AverageBitRate,
-            value: NSNumber(value: targetBitrate)
-        )
+        _ = setProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: NSNumber(value: targetBitrate))
         let rateLimits: [NSNumber] = [
             NSNumber(value: rateLimit.bytes),
             NSNumber(value: rateLimit.windowSeconds),
         ]
-        let rateLimitApplied = setProperty(
-            session,
-            key: kVTCompressionPropertyKey_DataRateLimits,
-            value: rateLimits as CFArray
-        )
-        let strategy: MirageEncoderRateControlStrategy = (averageApplied && rateLimitApplied)
-            ? .averageBitRateDataRateLimits
-            : .none
-        encodedOutputTelemetry.updateRateControl(
-            requestedBitrateBps: targetBitrate,
-            strategy: strategy,
-            rateLimit: rateLimitApplied ? rateLimit : nil
-        )
+        _ = setProperty(session, key: kVTCompressionPropertyKey_DataRateLimits, value: rateLimits as CFArray)
 
         let limitMB = Double(rateLimit.bytes) / 1_000_000.0
         let limitText = limitMB.formatted(.number.precision(.fractionLength(2)))
         let windowText = rateLimit.windowSeconds.formatted(.number.precision(.fractionLength(2)))
         MirageLogger
             .encoder(
-                "Encoder bitrate target: \(mirageFormattedMegabitRate(targetBitrate)) (strategy \(strategy.rawValue), rate limit \(limitText) MB/\(windowText)s)"
+                "Encoder bitrate target: \(mirageFormattedMegabitRate(targetBitrate)) (rate limit \(limitText) MB/\(windowText)s)"
             )
     }
 
@@ -142,59 +120,65 @@ extension VideoEncoder {
         status: inout SessionPolicyStatus
     ) -> LowLatencyBitrateResult {
         guard let targetBitrate = configuration.bitrate, targetBitrate > 0 else {
-            encodedOutputTelemetry.updateRateControl(
-                requestedBitrateBps: nil,
-                strategy: .none,
-                rateLimit: nil
-            )
             return LowLatencyBitrateResult(strategy: .none, windowSeconds: nil)
         }
 
         let targetFrameRate = max(1, targetFrameRate)
-        let rateLimit = Self.dataRateLimit(
-            targetBitrateBps: targetBitrate,
-            targetFrameRate: targetFrameRate
-        )
-        let strategy: LowLatencyBitrateStrategy
-        let rateLimitForTelemetry: (bytes: Int, windowSeconds: Double)?
-
-        _ = clearPropertyIfPresentTracked(
+        let constantBitRateApplied = setPropertyTracked(
             session,
             key: kVTCompressionPropertyKey_ConstantBitRate,
-            propertyName: "clearConstantBitRate",
-            status: &status
-        )
-        let averageBitRateApplied = setPropertyTracked(
-            session,
-            key: kVTCompressionPropertyKey_AverageBitRate,
             value: NSNumber(value: targetBitrate),
-            propertyName: "averageBitRate",
+            propertyName: "constantBitRate",
             status: &status
         )
-        let rateLimits: [NSNumber] = [
-            NSNumber(value: rateLimit.bytes),
-            NSNumber(value: rateLimit.windowSeconds),
-        ]
-        let rateLimitApplied = setPropertyTracked(
-            session,
-            key: kVTCompressionPropertyKey_DataRateLimits,
-            value: rateLimits as CFArray,
-            propertyName: "dataRateLimits",
-            status: &status
-        )
-        strategy = (averageBitRateApplied && rateLimitApplied) ? .averageBitRateDataRateLimits : .none
-        rateLimitForTelemetry = rateLimitApplied ? rateLimit : nil
 
-        encodedOutputTelemetry.updateRateControl(
-            requestedBitrateBps: targetBitrate,
-            strategy: strategy.publicStrategy,
-            rateLimit: rateLimitForTelemetry
-        )
+        let strategy: LowLatencyBitrateStrategy
+        let windowSeconds: Double?
+        if constantBitRateApplied {
+            strategy = .constantBitRate
+            windowSeconds = nil
+        } else {
+            let averageBitRateApplied = setPropertyTracked(
+                session,
+                key: kVTCompressionPropertyKey_AverageBitRate,
+                value: NSNumber(value: targetBitrate),
+                propertyName: "averageBitRate",
+                status: &status
+            )
+            if averageBitRateApplied {
+                // Sunshine-style VT defaults rely on bitrate + realtime + speed priority,
+                // without forcing an ultra-tight DataRateLimits window.
+                strategy = .averageBitRateOnly
+                windowSeconds = nil
+            } else {
+                let rateLimit = Self.dataRateLimit(
+                    targetBitrateBps: targetBitrate,
+                    targetFrameRate: targetFrameRate
+                )
+                let rateLimits: [NSNumber] = [
+                    NSNumber(value: rateLimit.bytes),
+                    NSNumber(value: rateLimit.windowSeconds),
+                ]
+                let rateLimitApplied = setPropertyTracked(
+                    session,
+                    key: kVTCompressionPropertyKey_DataRateLimits,
+                    value: rateLimits as CFArray,
+                    propertyName: "dataRateLimits",
+                    status: &status
+                )
+                strategy = rateLimitApplied ? .averageBitRateDataRateLimits : .none
+                windowSeconds = rateLimitApplied ? rateLimit.windowSeconds : nil
+            }
+        }
 
-        if strategy == .averageBitRateDataRateLimits, let rateLimitForTelemetry {
+        if strategy == .averageBitRateDataRateLimits, let windowSeconds {
+            let rateLimit = Self.dataRateLimit(
+                targetBitrateBps: targetBitrate,
+                targetFrameRate: targetFrameRate
+            )
             let limitMB = Double(rateLimit.bytes) / 1_000_000.0
             let limitText = limitMB.formatted(.number.precision(.fractionLength(2)))
-            let windowText = rateLimitForTelemetry.windowSeconds.formatted(.number.precision(.fractionLength(4)))
+            let windowText = windowSeconds.formatted(.number.precision(.fractionLength(4)))
             MirageLogger
                 .encoder(
                     "Encoder bitrate target: \(mirageFormattedMegabitRate(targetBitrate)) (strategy \(strategy.rawValue), rate limit \(limitText) MB/\(windowText)s)"
@@ -205,7 +189,7 @@ extension VideoEncoder {
                     "Encoder bitrate target: \(mirageFormattedMegabitRate(targetBitrate)) (strategy \(strategy.rawValue))"
                 )
         }
-        return LowLatencyBitrateResult(strategy: strategy, windowSeconds: rateLimitForTelemetry?.windowSeconds)
+        return LowLatencyBitrateResult(strategy: strategy, windowSeconds: windowSeconds)
     }
 
     func applyBitrateSettingsToActiveSession() {
@@ -214,7 +198,7 @@ extension VideoEncoder {
             streamKind: streamKind,
             colorDepth: configuration.colorDepth,
             pixelFormat: activePixelFormat
-        ), (latencyMode == .lowestLatency || latencyMode == .balanced) {
+        ), latencyMode == .lowestLatency {
             var status = SessionPolicyStatus()
             _ = applyLowLatencyBitrateSettings(
                 session,
@@ -231,7 +215,7 @@ extension VideoEncoder {
         targetFrameRate: Int
     ) -> (bytes: Int, windowSeconds: Double) {
         let clampedFrameRate = max(1, targetFrameRate)
-        let windowSeconds = clampedFrameRate >= 90 ? 0.25 : 0.5
+        let windowSeconds = clampedFrameRate >= 120 ? 0.25 : 0.5
         let bytesPerSecond = max(1.0, Double(targetBitrateBps) / 8.0)
         let bytes = max(1, Int((bytesPerSecond * windowSeconds).rounded()))
         return (bytes: bytes, windowSeconds: windowSeconds)

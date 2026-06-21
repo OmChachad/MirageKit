@@ -146,16 +146,10 @@ extension InputCapturingView {
     @objc
     func handleScroll(_ gesture: UIPanGestureRecognizer) {
         requestResponderRecovery(.interaction)
-        let rawLocation = gesture.location(in: self)
         let translation = gesture.translation(in: self)
-        let eventModifiers = modifiers(from: gesture)
+        let location = updatePointerLocationForScrollInteraction(gesture.location(in: self))
 
-        if gesture.state == .began {
-            stopTouchScrollDeceleration()
-            moveTrackpadCursorToDirectScrollStartIfNeeded(rawLocation, modifiers: eventModifiers)
-        }
-
-        let location = updatePointerLocationForScrollInteraction(rawLocation)
+        if gesture.state == .began { stopTouchScrollDeceleration() }
 
         // Reset translation to get incremental deltas
         gesture.setTranslation(.zero, in: self)
@@ -163,6 +157,7 @@ extension InputCapturingView {
         let velocity = gesture.velocity(in: self)
         let shouldDecelerate = shouldDecelerateTouchScroll(for: velocity, state: gesture.state)
 
+        let eventModifiers = modifiers(from: gesture)
         let phase: MirageScrollPhase = {
             if shouldDecelerate, gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed { return .none }
             return MirageScrollPhase(gestureState: gesture.state)

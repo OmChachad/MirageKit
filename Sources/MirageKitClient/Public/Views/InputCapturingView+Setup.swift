@@ -56,7 +56,7 @@ extension InputCapturingView {
             let modifiers = keyboardModifiers
             sendModifierSnapshotIfNeeded(modifiers)
             let location = scrollEventLocation(source: source)
-            let scrollEvent = makeScrollEvent(
+            guard let scrollEvent = makeScrollEvent(
                 deltaX: deltaX,
                 deltaY: deltaY,
                 location: location,
@@ -64,15 +64,8 @@ extension InputCapturingView {
                 momentumPhase: momentumPhase,
                 modifiers: modifiers,
                 isPrecise: true
-            )
-            if let scrollEvent {
-                onInputEvent?(.scrollWheel(scrollEvent))
-            }
-            clearDirectTouchScrollAnchorIfNeeded(
-                source: source,
-                phase: phase,
-                momentumPhase: momentumPhase
-            )
+            ) else { return }
+            onInputEvent?(.scrollWheel(scrollEvent))
         }
 
         // Configure trackpad rotation callback

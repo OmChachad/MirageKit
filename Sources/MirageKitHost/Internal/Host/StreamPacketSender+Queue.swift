@@ -41,7 +41,8 @@ extension StreamPacketSender {
                 queuedStalePacketDropCount &+= 1
                 markDependencyFrameDroppedLocked(
                     queuedItem.item,
-                    reason: .expiredQueuedFrame
+                    reason: .expiredQueuedFrame,
+                    clientVisible: false
                 )
             } else {
                 retainedItems.append(queuedItem)
@@ -110,60 +111,43 @@ extension StreamPacketSender {
             let evictedItem = queuedWorkItems.remove(at: evictionIndex)
             queuedBytes = max(0, queuedBytes - evictedItem.accountedBytes)
             queuedStalePacketDropCount &+= 1
-            markDependencyFrameDroppedLocked(evictedItem.item, reason: .queueEviction)
+            markDependencyFrameDroppedLocked(evictedItem.item, reason: .queueEviction, clientVisible: false)
         }
     }
 
     /// Updates dependency-drop state after a non-keyframe is dropped.
     nonisolated func markDependencyFrameDroppedLocked(
         _ item: WorkItem,
-        reason: DependencyFrameDropReason
+        reason: DependencyFrameDropReason,
+        clientVisible: Bool
     ) {
         guard !item.isKeyframe else { return }
-        switch reason {
-        case .expiredBeforeEnqueue, .expiredBeforeSend, .expiredDuringSend, .expiredQueuedFrame:
+        let now = CFAbsoluteTimeGetCurrent()
+        if !clientVisible {
             queuedSenderLocalDeadlineDropCount &+= 1
-        case .generationAbort, .oversizedFrame, .queueEviction:
-            break
-        }
-
-        if dependencyBaselineKeyframeGeneration == item.generation,
-           dependencyBaselineKeyframeFrameNumber >= item.frameNumber {
             return
         }
-
-        let wasAlreadyHolding = dependencyRecoveryRequiresKeyframe &&
-            latestDependencyDropGeneration == item.generation
+        if now < dependencyDropSuppressionDeadline {
+            resetKeyframeTrackingLocked()
+            return
+        }
+        let wasAlreadyHolding = dropNonKeyframesUntilKeyframe && latestKeyframeGeneration == item.generation
         dropNonKeyframesUntilKeyframe = true
-        dependencyRecoveryRequiresKeyframe = true
-        latestDependencyDropGeneration = item.generation
-        latestDependencyDropFrameNumber = max(latestDependencyDropFrameNumber, item.frameNumber)
+        latestKeyframeGeneration = item.generation
+        latestKeyframeFrameNumber = max(latestKeyframeFrameNumber, item.frameNumber)
         guard !wasAlreadyHolding else { return }
         onDependencyFrameDropped?(item.streamID, item.frameNumber, reason)
     }
 
-    /// Records the newest keyframe that can cover dependency drops at or before its frame number.
-    nonisolated func recordDependencyBaselineKeyframeLocked(_ item: WorkItem) {
-        guard item.isKeyframe else { return }
-        if dependencyBaselineKeyframeGeneration != item.generation ||
-            item.frameNumber >= dependencyBaselineKeyframeFrameNumber {
-            dependencyBaselineKeyframeGeneration = item.generation
-            dependencyBaselineKeyframeFrameNumber = item.frameNumber
-        }
-    }
-
-    /// Returns whether a keyframe is new enough to cover any currently held dependency drop.
-    nonisolated func keyframeSatisfiesDependencyRecoveryLocked(_ item: WorkItem) -> Bool {
-        guard dependencyRecoveryRequiresKeyframe else { return true }
-        guard latestDependencyDropGeneration == item.generation else { return false }
-        return item.frameNumber >= latestDependencyDropFrameNumber
-    }
-
-    /// Returns whether the sender is holding P-frames until a new keyframe covers a dropped dependency.
-    func requiresDependencyRecoveryKeyframe() -> Bool {
-        queueLock.withLock {
-            dependencyRecoveryRequiresKeyframe
-        }
+    /// Extends the grace window that keeps local keyframe-adjacent drops from becoming client visible.
+    nonisolated func extendDependencyDropSuppressionLocked(
+        now: CFAbsoluteTime,
+        duration: CFAbsoluteTime = keyframeDependencyDropSuppressionSeconds
+    ) {
+        dependencyDropSuppressionDeadline = max(
+            dependencyDropSuppressionDeadline,
+            now + duration
+        )
     }
 
     /// Returns the worst-case payload budget for a frame including FEC parity payloads.
@@ -179,11 +163,8 @@ extension StreamPacketSender {
     /// Clears keyframe dependency tracking while the caller holds `queueLock`.
     nonisolated func resetKeyframeTrackingLocked() {
         dropNonKeyframesUntilKeyframe = false
-        dependencyRecoveryRequiresKeyframe = false
         latestKeyframeFrameNumber = 0
         latestKeyframeGeneration = 0
-        latestDependencyDropFrameNumber = 0
-        latestDependencyDropGeneration = 0
     }
 
     /// Clears queued work and dependency tracking while preserving lifecycle and telemetry counters.
@@ -195,8 +176,7 @@ extension StreamPacketSender {
 
     /// Clears dependency-drop state while the caller holds `queueLock`.
     nonisolated func resetDependencyTrackingLocked() {
-        dependencyBaselineKeyframeFrameNumber = 0
-        dependencyBaselineKeyframeGeneration = 0
+        dependencyDropSuppressionDeadline = 0
         resetKeyframeTrackingLocked()
     }
 }

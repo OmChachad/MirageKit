@@ -61,12 +61,6 @@ struct RecoveryCoordinator: Equatable {
         retryDeadline = 0
     }
 
-    mutating func recordDispatchDeferred(until deadline: CFAbsoluteTime) {
-        guard activeReason != nil else { return }
-        attemptCount = max(0, attemptCount - 1)
-        retryDeadline = max(retryDeadline, deadline)
-    }
-
     mutating func recordProgress() {
         activeReason = nil
         attemptCount = 0

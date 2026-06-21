@@ -46,6 +46,7 @@ struct HostCaptureCadenceRecoveryPolicy: Sendable {
         var sendCompletionHealthyFrameMultiplier: Double = 3.0
         var severeCaptureGapMs: Double = 500.0
         var highRefreshTargetFrameRate: Int = 90
+        var highRefreshMinimumHealthyFrameRate: Int = 60
         var highRefreshPolicyRateMismatchRatio: Double = 0.85
     }
 
@@ -197,7 +198,7 @@ struct HostCaptureCadenceRecoveryPolicy: Sendable {
         _ sample: Sample,
         configuration: Configuration
     ) -> Bool {
-        let targetFPS = effectiveHealthFrameRate(sample)
+        let targetFPS = effectiveHealthFrameRate(sample, configuration: configuration)
         let fpsFloor = targetFPS * configuration.captureFPSFloorRatio
         let observedCaptureRates = [
             sample.captureFPS,
@@ -271,7 +272,7 @@ struct HostCaptureCadenceRecoveryPolicy: Sendable {
         if highRefreshPolicyRateMismatch(sample, configuration: configuration) {
             return .reassertVirtualDisplayMode
         }
-        let healthFPS = effectiveHealthFrameRate(sample)
+        let healthFPS = effectiveHealthFrameRate(sample, configuration: configuration)
         guard observedCaptureFPS < healthFPS * configuration.captureFPSFloorRatio else { return nil }
         return .restartCapture
     }
@@ -346,9 +347,15 @@ struct HostCaptureCadenceRecoveryPolicy: Sendable {
             pacerHealthy
     }
 
-    private static func effectiveHealthFrameRate(_ sample: Sample) -> Double {
+    private static func effectiveHealthFrameRate(
+        _ sample: Sample,
+        configuration: Configuration
+    ) -> Double {
         let targetFrameRate = max(1, sample.targetFrameRate)
-        return Double(targetFrameRate)
+        guard targetFrameRate >= configuration.highRefreshTargetFrameRate else {
+            return Double(targetFrameRate)
+        }
+        return Double(min(targetFrameRate, max(1, configuration.highRefreshMinimumHealthyFrameRate)))
     }
 
     private static func largest(_ values: Double?...) -> Double? {

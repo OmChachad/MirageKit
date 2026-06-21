@@ -65,20 +65,17 @@ extension VideoEncoder {
 
     /// Rate-control policy selected for low-latency HEVC/H.264 sessions.
     enum LowLatencyBitrateStrategy: String {
+        /// Use VideoToolbox constant-bit-rate mode.
+        case constantBitRate
+
+        /// Use average bitrate only.
+        case averageBitRateOnly
+
         /// Use average bitrate plus data-rate limits.
         case averageBitRateDataRateLimits
 
         /// Do not apply a low-latency bitrate override.
         case none
-
-        var publicStrategy: MirageEncoderRateControlStrategy {
-            switch self {
-            case .averageBitRateDataRateLimits:
-                .averageBitRateDataRateLimits
-            case .none:
-                .none
-            }
-        }
     }
 
     /// Applied low-latency bitrate strategy and optional data-rate window.
@@ -94,7 +91,7 @@ extension VideoEncoder {
         switch mode {
         case .smoothest:
             2
-        case .lowestLatency, .balanced:
+        case .lowestLatency:
             0
         }
     }
@@ -224,7 +221,7 @@ extension VideoEncoder {
         if let activeProfileLevel {
             MirageLogger.encoder("Encoder profile: \(hevcProfileName(for: activeProfileLevel))")
         }
-        if latencyMode == .lowestLatency || latencyMode == .balanced {
+        if latencyMode == .lowestLatency {
             if Self.shouldSuppressStandardLowLatencyRateControl(
                 streamKind: streamKind,
                 colorDepth: configuration.colorDepth,

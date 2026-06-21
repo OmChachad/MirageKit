@@ -324,9 +324,6 @@ extension WindowCaptureEngine {
 
         MirageLogger.capture("Updating frame rate to \(fps) fps")
         currentFrameRate = fps
-        if fps < 120 {
-            minimumFrameIntervalPolicy = .automatic
-        }
 
         // Create new stream configuration with updated frame rate
         let streamConfig = makeStreamConfigurationForUpdate(

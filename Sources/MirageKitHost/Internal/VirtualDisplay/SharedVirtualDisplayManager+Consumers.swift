@@ -335,17 +335,13 @@ extension SharedVirtualDisplayManager {
     /// Restarts the driver backing a consumer when cadence validation indicates the display is not ticking natively.
     ///
     /// The display snapshot is unchanged; the returned value confirms the consumer and display were still active.
-    func restartCadenceDriver(
-        for consumer: DisplayConsumer,
-        strength: VirtualDisplayKeepalive.Strength = .normal
-    ) async -> DisplaySnapshot? {
+    func restartCadenceDriver(for consumer: DisplayConsumer) async -> DisplaySnapshot? {
         guard activeConsumers[consumer] != nil, let display = sharedDisplay else { return nil }
         await MainActor.run {
             VirtualDisplayKeepaliveController.shared.restart(
                 displayID: display.displayID,
                 spaceID: display.spaceID,
-                refreshRate: display.refreshRate,
-                strength: strength
+                refreshRate: display.refreshRate
             )
         }
         return snapshot(from: display)
