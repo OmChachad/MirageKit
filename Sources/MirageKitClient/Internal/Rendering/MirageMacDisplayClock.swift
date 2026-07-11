@@ -16,23 +16,34 @@ import QuartzCore
 @MainActor
 final class MirageMacDisplayClock: NSObject, @unchecked Sendable {
     private let lock = NSLock()
-    private nonisolated(unsafe) var displayLink: CADisplayLink?
-    private var targetFPS: Int = 60
-    private var lastEmittedTickTime: CFTimeInterval = 0
-    private var tickHandler: (@Sendable (CFTimeInterval) -> Void)?
+    /// Stored as AnyObject so the class stays available on macOS 13; always a CADisplayLink.
+    private nonisolated(unsafe) var displayLink: AnyObject?
+    /// CVDisplayLink pacing path used on macOS 13, where `CADisplayLink` is unavailable.
+    private nonisolated(unsafe) var legacyDisplayLink: CVDisplayLink?
+    private nonisolated(unsafe) var targetFPS: Int = 60
+    private nonisolated(unsafe) var lastEmittedTickTime: CFTimeInterval = 0
+    private nonisolated(unsafe) var tickHandler: (@Sendable (CFTimeInterval) -> Void)?
 
     /// Tears down the display link without requiring the main actor so the clock can be released
     /// safely on any executor; the teardown only touches lock-guarded state and the thread-safe
-    /// `CADisplayLink.invalidate()`.
+    /// `CADisplayLink.invalidate()` / `CVDisplayLinkStop`.
     nonisolated deinit {
-        let link: CADisplayLink?
+        let link: AnyObject?
+        let legacyLink: CVDisplayLink?
         lock.lock()
         link = displayLink
         displayLink = nil
+        legacyLink = legacyDisplayLink
+        legacyDisplayLink = nil
         tickHandler = nil
         lastEmittedTickTime = 0
         lock.unlock()
-        link?.invalidate()
+        if #available(macOS 14.0, *) {
+            (link as? CADisplayLink)?.invalidate()
+        }
+        if let legacyLink {
+            CVDisplayLinkStop(legacyLink)
+        }
     }
 
     func start(
@@ -47,10 +58,15 @@ final class MirageMacDisplayClock: NSObject, @unchecked Sendable {
             defer { lock.unlock() }
             self.targetFPS = normalizedTargetFPS
             self.tickHandler = tickHandler
-            alreadyRunning = displayLink != nil
+            alreadyRunning = displayLink != nil || legacyDisplayLink != nil
         }
 
         guard !alreadyRunning else { return }
+
+        guard #available(macOS 14.0, *) else {
+            startLegacyDisplayLink(for: view)
+            return
+        }
 
         let createdLink = view.displayLink(target: self, selector: #selector(displayLinkDidTick(_:)))
         createdLink.preferredFrameRateRange = Self.frameRateRange(for: normalizedTargetFPS)
@@ -64,26 +80,73 @@ final class MirageMacDisplayClock: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Starts a CVDisplayLink bound to the view's current display. Ticks arrive on the
+    /// CVDisplayLink thread; `emitTick` already throttles under the lock, and the consumer
+    /// trampolines back to the main actor.
+    private func startLegacyDisplayLink(for view: NSView) {
+        var createdLink: CVDisplayLink?
+        CVDisplayLinkCreateWithActiveCGDisplays(&createdLink)
+        guard let createdLink else {
+            MirageLogger.error(.renderer, "Failed to create CVDisplayLink for presentation pacing")
+            return
+        }
+        if let screenNumber = view.window?.screen?
+            .deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+            CVDisplayLinkSetCurrentCGDisplay(createdLink, CGDirectDisplayID(screenNumber.uint32Value))
+        }
+        CVDisplayLinkSetOutputHandler(createdLink) { [weak self] _, inNow, _, _, _ in
+            // Gate on the vsync-periodic callback timestamp rather than the
+            // wall-clock delivery time: callback delivery jitter otherwise
+            // makes the emit gate swallow real vsyncs and drop presented frames.
+            let hostFrequency = CVGetHostClockFrequency()
+            let now = hostFrequency > 0
+                ? Double(inNow.pointee.hostTime) / hostFrequency
+                : CACurrentMediaTime()
+            self?.emitTick(now: now)
+            return kCVReturnSuccess
+        }
+        CVDisplayLinkStart(createdLink)
+
+        lock.lock()
+        do {
+            defer { lock.unlock() }
+            legacyDisplayLink = createdLink
+            lastEmittedTickTime = 0
+        }
+    }
+
     func updateTargetFPS(_ fps: Int) {
         let normalizedTargetFPS = MirageStreamCadenceTarget.normalizedFPS(fps)
-        let link: CADisplayLink?
+        let link: AnyObject?
         lock.lock()
         targetFPS = normalizedTargetFPS
         link = displayLink
         lock.unlock()
-        link?.preferredFrameRateRange = Self.frameRateRange(for: normalizedTargetFPS)
+        if #available(macOS 14.0, *) {
+            (link as? CADisplayLink)?.preferredFrameRateRange = Self.frameRateRange(for: normalizedTargetFPS)
+        }
+        // The CVDisplayLink path runs at the display refresh rate and relies on
+        // emitTick throttling to honor the target FPS.
     }
 
     func stop() {
-        let link: CADisplayLink?
+        let link: AnyObject?
+        let legacyLink: CVDisplayLink?
         lock.lock()
         link = displayLink
         displayLink = nil
+        legacyLink = legacyDisplayLink
+        legacyDisplayLink = nil
         tickHandler = nil
         lastEmittedTickTime = 0
         lock.unlock()
 
-        link?.invalidate()
+        if #available(macOS 14.0, *) {
+            (link as? CADisplayLink)?.invalidate()
+        }
+        if let legacyLink {
+            CVDisplayLinkStop(legacyLink)
+        }
     }
 
     nonisolated static func shouldEmitTick(
@@ -108,8 +171,13 @@ final class MirageMacDisplayClock: NSObject, @unchecked Sendable {
         return CAFrameRateRange(minimum: preferred, maximum: preferred, preferred: preferred)
     }
 
+    @available(macOS 14.0, *)
     @objc private func displayLinkDidTick(_ displayLink: CADisplayLink) {
-        let now = displayLink.timestamp
+        emitTick(now: displayLink.timestamp)
+    }
+
+    /// Emits a throttled tick. Safe to call from any thread; state is lock-guarded.
+    nonisolated private func emitTick(now: CFTimeInterval) {
         let handler: (@Sendable (CFTimeInterval) -> Void)?
 
         lock.lock()

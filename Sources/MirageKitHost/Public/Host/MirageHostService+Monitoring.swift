@@ -119,6 +119,13 @@ extension MirageHostService {
         isVisible: Bool,
         sampledAt: CFAbsoluteTime? = nil
     ) {
+        // With the real host cursor captured inside the desktop stream image and
+        // no client cursor lock, shape sync is dead traffic for the client.
+        if streamID == desktopStreamID,
+           desktopStreamMode != .secondary,
+           !desktopCursorPresentation.requiresCursorShapeUpdates {
+            return
+        }
         let clientContext: ClientContext?
         if let session = activeSessionByStreamID[streamID] {
             clientContext = clientsBySessionID.values.first(where: { $0.client.id == session.client.id })

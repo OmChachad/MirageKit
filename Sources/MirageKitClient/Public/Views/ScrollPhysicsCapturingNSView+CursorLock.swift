@@ -152,7 +152,7 @@ extension ScrollPhysicsCapturingNSView {
         invalidateHostCursorRects()
 
         guard shouldMirrorHostCursorAppearanceToSystemCursor, mirroredSystemCursorVisible, isMouseInsideView else { return }
-        Self.cursorSystemHooks.setCursor(mirroredSystemCursorType.nsCursor)
+        Self.cursorSystemHooks.setCursor(mirroredSystemCursorType.clientNSCursor)
     }
 
     var isMouseInsideView: Bool {
@@ -298,7 +298,7 @@ extension ScrollPhysicsCapturingNSView {
             in: bounds,
             contentRect: contentRect
         )
-        let hotspot = mirroredSystemCursorType.nsCursor.hotSpot
+        let hotspot = mirroredSystemCursorType.clientNSCursor.hotSpot
         // macOS uses flipped coordinates for the hotspot Y (bottom-left origin)
         lockedCursorView.frame.origin = CGPoint(
             x: point.x - hotspot.x,

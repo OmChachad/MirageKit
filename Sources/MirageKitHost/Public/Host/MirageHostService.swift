@@ -11,7 +11,6 @@ import Foundation
 import Loom
 import MirageBootstrapShared
 import Network
-import Observation
 import MirageKit
 
 #if os(macOS)
@@ -20,26 +19,25 @@ import ApplicationServices
 import ScreenCaptureKit
 
 /// Main entry point for hosting window streams (macOS only)
-@Observable
 @MainActor
-public final class MirageHostService {
+public final class MirageHostService: ObservableObject {
     /// Available windows for streaming
-    public internal(set) var availableWindows: [MirageWindow] = []
+    @Published public internal(set) var availableWindows: [MirageWindow] = []
 
     /// Currently active streams
-    public internal(set) var activeStreams: [MirageStreamSession] = []
+    @Published public internal(set) var activeStreams: [MirageStreamSession] = []
 
     /// Connected clients
-    public internal(set) var connectedClients: [MirageConnectedClient] = []
+    @Published public internal(set) var connectedClients: [MirageConnectedClient] = []
 
     /// Current host state
-    public internal(set) var state: HostState = .idle
+    @Published public internal(set) var state: HostState = .idle
 
     /// Current session state (locked, unlocked, sleeping, etc.)
-    public internal(set) var sessionState: LoomSessionAvailability = .ready
+    @Published public internal(set) var sessionState: LoomSessionAvailability = .ready
 
     /// Whether shared clipboard sync is enabled for eligible active sessions.
-    public var sharedClipboardEnabled: Bool = false {
+    @Published public var sharedClipboardEnabled: Bool = false {
         didSet {
             guard oldValue != sharedClipboardEnabled else { return }
             syncSharedClipboardState(forceStatusBroadcast: true)
@@ -47,10 +45,10 @@ public final class MirageHostService {
     }
 
     /// Whether app-stream window close on the client should attempt to close the host window.
-    public var closeHostWindowOnClientWindowClose: Bool = false
+    @Published public var closeHostWindowOnClientWindowClose: Bool = false
 
     /// Preferred low-power policy for host encoder sessions.
-    public var encoderLowPowerModePreference: MirageCodecLowPowerModePreference = .auto {
+    @Published public var encoderLowPowerModePreference: MirageCodecLowPowerModePreference = .auto {
         didSet {
             guard oldValue != encoderLowPowerModePreference else { return }
             scheduleEncoderLowPowerPolicyApply(reason: "preference_change")
@@ -58,22 +56,22 @@ public final class MirageHostService {
     }
 
     /// Whether battery-based low-power policy is currently supported on this host device.
-    public internal(set) var encoderLowPowerSupportsBatteryPolicy: Bool = false
+    @Published public internal(set) var encoderLowPowerSupportsBatteryPolicy: Bool = false
 
     /// Whether the host encoder is currently using low-power mode.
-    public internal(set) var isEncoderLowPowerModeActive: Bool = false
+    @Published public internal(set) var isEncoderLowPowerModeActive: Bool = false
 
     /// Effective cursor presentation for the active desktop stream.
-    public internal(set) var desktopCursorPresentation: MirageDesktopCursorPresentation = .simulatedCursor
+    @Published public internal(set) var desktopCursorPresentation: MirageDesktopCursorPresentation = .simulatedCursor
 
     /// Latest client-owned stream-option state mirrored back to the host UI.
-    public internal(set) var remoteClientStreamStatusOverlayEnabled = false
+    @Published public internal(set) var remoteClientStreamStatusOverlayEnabled = false
 
     /// Latest client-owned stream-options display mode mirrored back to the host UI.
-    public internal(set) var remoteClientStreamOptionsDisplayMode: MirageStreamOptionsDisplayMode = .inStream
+    @Published public internal(set) var remoteClientStreamOptionsDisplayMode: MirageStreamOptionsDisplayMode = .inStream
 
     /// Whether the connected client currently exposes desktop Lock Client Cursor controls.
-    public internal(set) var remoteClientDesktopCursorLockAvailable = false
+    @Published public internal(set) var remoteClientDesktopCursorLockAvailable = false
 
     /// Latest client-owned desktop Lock Client Cursor mode mirrored back to the host UI.
     public internal(set) var remoteClientDesktopCursorLockMode: MirageDesktopCursorLockMode = .off
@@ -108,7 +106,7 @@ public final class MirageHostService {
     public var hostApplicationRestartHandler: (@MainActor @Sendable () -> Void)?
 
     /// Identity manager for signed handshake envelopes.
-    public var identityManager: LoomIdentityManager? = MirageKit.identityManager {
+    @Published public var identityManager: LoomIdentityManager? = MirageKit.identityManager {
         didSet {
             loomNode.identityManager = identityManager
             let keyID = Self.identityKeyID(for: identityManager)
@@ -116,7 +114,7 @@ public final class MirageHostService {
         }
     }
 
-    @ObservationIgnored private var cachedPermissionManager: MirageAccessibilityPermissionManager?
+    private var cachedPermissionManager: MirageAccessibilityPermissionManager?
 
     /// Accessibility permission manager for host UI permission state.
     public var permissionManager: MirageAccessibilityPermissionManager {
@@ -129,7 +127,7 @@ public final class MirageHostService {
     }
 
     /// Whether the most recent capture inventory attempt hit an explicit screen-recording denial.
-    public internal(set) var lastScreenRecordingPermissionDenied = false
+    @Published public internal(set) var lastScreenRecordingPermissionDenied = false
 
     /// Window controller for host window management.
     public let windowController = MirageHostWindowController()
@@ -138,7 +136,7 @@ public final class MirageHostService {
     public nonisolated let inputController = MirageHostInputController()
 
     /// Whether direct remote control transport is enabled.
-    public var remoteTransportEnabled: Bool = false {
+    @Published public var remoteTransportEnabled: Bool = false {
         didSet {
             Task { @MainActor [weak self] in
                 await self?.updateRemoteControlListenerState()
@@ -147,10 +145,10 @@ public final class MirageHostService {
     }
 
     /// Bound local port for the remote control listener.
-    public internal(set) var remoteControlPort: UInt16?
+    @Published public internal(set) var remoteControlPort: UInt16?
 
     /// Whether the remote control listener is currently ready to accept connections.
-    public internal(set) var remoteControlListenerReady = false
+    @Published public internal(set) var remoteControlListenerReady = false
 
     /// Whether the host can currently accept a new client session.
     public var allowsNewClientConnections: Bool {
@@ -168,7 +166,7 @@ public final class MirageHostService {
     public var onConnectionAvailabilityChanged: (@MainActor @Sendable (Bool) -> Void)?
 
     /// Callback fired when the CloudKit-only local endpoint hint changes.
-    @ObservationIgnored @_spi(HostApp) public var onCloudKitLocalEndpointHintChanged: (@MainActor @Sendable () -> Void)?
+    @_spi(HostApp) public var onCloudKitLocalEndpointHintChanged: (@MainActor @Sendable () -> Void)?
 
     /// STUN keepalive that refreshes the NAT mapping for the remote control port.
     var stunKeepalive: LoomSTUNKeepalive?
@@ -200,9 +198,9 @@ public final class MirageHostService {
     /// Stable host identifier advertised during discovery and bootstrap.
     var hostID: UUID = .init()
     /// Color-depth modes the host currently advertises to clients.
-    public internal(set) var supportedColorDepths: [MirageStreamColorDepth] = [.standard, .pro]
+    @Published public internal(set) var supportedColorDepths: [MirageStreamColorDepth] = [.standard, .pro]
     /// Whether the host currently advertises ProRes 4444 app/window stream support.
-    public internal(set) var supportsProRes4444 = false
+    @Published public internal(set) var supportsProRes4444 = false
     let localNetworkMonitor = MirageLocalNetworkMonitor(label: "host")
     /// Power-state monitor used by the encoder low-power policy extension.
     let encoderPowerStateMonitor = MiragePowerStateMonitor()
@@ -420,11 +418,11 @@ public final class MirageHostService {
     /// Active desktop media-pipeline restart caused by a media route policy-class change.
     var desktopMediaPathPipelineRestartStreamID: StreamID?
     /// Debounced task refreshing desktop display topology.
-    @ObservationIgnored nonisolated(unsafe) var desktopDisplayTopologyRefreshTask: Task<Void, Never>?
+    nonisolated(unsafe) var desktopDisplayTopologyRefreshTask: Task<Void, Never>?
     /// Deferred cleanup task for virtual displays created during desktop startup.
-    @ObservationIgnored nonisolated(unsafe) var deferredDesktopStartupDisplayCleanupTask: Task<Void, Never>?
+    nonisolated(unsafe) var deferredDesktopStartupDisplayCleanupTask: Task<Void, Never>?
     /// Cancellable cleanup task for display restoration after an established desktop stream stops.
-    @ObservationIgnored nonisolated(unsafe) var deferredDesktopDisplayCleanupTask: Task<Void, Never>?
+    nonisolated(unsafe) var deferredDesktopDisplayCleanupTask: Task<Void, Never>?
     /// Generation token invalidating stale deferred desktop display cleanup work.
     var desktopDisplayCleanupGeneration: UInt64 = 0
 
@@ -524,20 +522,20 @@ public final class MirageHostService {
     /// Disk-backed app icon catalog cache.
     let appIconCatalogStore = HostAppIconCatalogStore()
     /// Host shared-clipboard bridge for active clients.
-    @ObservationIgnored var sharedClipboardBridge: MirageHostSharedClipboardBridge?
+    var sharedClipboardBridge: MirageHostSharedClipboardBridge?
     /// Latest shared-clipboard enablement status per client.
-    @ObservationIgnored var sharedClipboardStatusByClientID: [UUID: Bool] = [:]
+    var sharedClipboardStatusByClientID: [UUID: Bool] = [:]
     /// Chunk reassembler for incoming shared-clipboard payloads.
-    @ObservationIgnored var clipboardChunkBuffer = MirageSharedClipboardChunkBuffer()
+    var clipboardChunkBuffer = MirageSharedClipboardChunkBuffer()
 
     /// Menu bar passthrough monitor for forwarding host app menu state.
     let menuBarMonitor = MenuBarMonitor()
 
     /// Window activation (robust multi-method for headless Macs)
-    @ObservationIgnored let windowActivator: WindowActivator = .forCurrentEnvironment()
+    let windowActivator: WindowActivator = .forCurrentEnvironment()
 
     /// Lights Out (curtain) preference for app/window and desktop streams.
-    public var lightsOutEnabled: Bool = false {
+    @Published public var lightsOutEnabled: Bool = false {
         didSet {
             Task { @MainActor [weak self] in
                 await self?.updateLightsOutState()
@@ -546,7 +544,7 @@ public final class MirageHostService {
     }
 
     /// Host-side shortcut that force stops streams and locks the Mac while Lights Out is active.
-    public var lightsOutEmergencyShortcut: MirageClientShortcutBinding =
+    @Published public var lightsOutEmergencyShortcut: MirageClientShortcutBinding =
         MirageHostLightsOutShortcut.defaultEmergencyShortcut {
         didSet {
             guard oldValue != lightsOutEmergencyShortcut else { return }
@@ -557,13 +555,13 @@ public final class MirageHostService {
     }
 
     /// Whether to lock the host when all active streaming has stopped.
-    public var lockHostWhenStreamingStops: Bool = false
+    @Published public var lockHostWhenStreamingStops: Bool = false
 
     /// Optional override for host lock behavior (defaults to CGSession if nil).
     public var lockHostHandler: (@MainActor () -> Void)?
 
     /// Called when the Lights Out emergency shortcut is triggered.
-    @ObservationIgnored public var onLightsOutEmergencyShortcut: (@MainActor () async -> Void)? {
+    public var onLightsOutEmergencyShortcut: (@MainActor () async -> Void)? {
         didSet {
             lightsOutController.onEmergencyShortcut = onLightsOutEmergencyShortcut
         }
@@ -575,16 +573,16 @@ public final class MirageHostService {
     var pendingDesktopStreamStartCount: Int = 0
 
     /// Whether host output stays muted while host audio streaming is active.
-    public var muteLocalAudioWhileStreaming: Bool = false {
+    @Published public var muteLocalAudioWhileStreaming: Bool = false {
         didSet {
             updateHostAudioMuteState()
         }
     }
 
-    @ObservationIgnored let lightsOutController = HostLightsOutController()
-    @ObservationIgnored let hostAudioMuteController = HostAudioMuteController()
-    @ObservationIgnored var stageManagerController = HostStageManagerController()
-    @ObservationIgnored nonisolated(unsafe) var screenParametersObserver: NSObjectProtocol?
+    let lightsOutController = HostLightsOutController()
+    let hostAudioMuteController = HostAudioMuteController()
+    var stageManagerController = HostStageManagerController()
+    nonisolated(unsafe) var screenParametersObserver: NSObjectProtocol?
     var appStreamingStageManagerNeedsRestore: Bool = false
     var appStreamingStageManagerPreparationInProgress: Bool = false
 
@@ -598,7 +596,7 @@ public final class MirageHostService {
     nonisolated let inputStreamCache = InputStreamCache()
 
     /// Fast input handler called on `inputQueue`, outside the main actor, for lowest-latency event delivery.
-    @ObservationIgnored public nonisolated(unsafe) var onInputEvent: ((
+    public nonisolated(unsafe) var onInputEvent: ((
         _ event: MirageInputEvent,
         _ window: MirageWindow,
         _ client: MirageConnectedClient
@@ -606,7 +604,7 @@ public final class MirageHostService {
         -> Void)?
 
     var controlMessageHandlers: [ControlMessageType: ControlMessageHandler] = [:]
-    @ObservationIgnored nonisolated(unsafe) var diagnosticsContextProviderToken: LoomDiagnosticsContextProviderToken?
+    nonisolated(unsafe) var diagnosticsContextProviderToken: LoomDiagnosticsContextProviderToken?
 
     /// Creates a host service with optional identity and transport configuration overrides.
     public init(

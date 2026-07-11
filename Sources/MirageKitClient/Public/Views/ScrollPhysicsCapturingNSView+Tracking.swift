@@ -43,7 +43,7 @@ extension ScrollPhysicsCapturingNSView {
     override func resetCursorRects() {
         super.resetCursorRects()
         guard shouldMirrorHostCursorAppearanceToSystemCursor, mirroredSystemCursorVisible else { return }
-        addCursorRect(resolvedDesktopPresentationContentRect, cursor: mirroredSystemCursorType.nsCursor)
+        addCursorRect(resolvedDesktopPresentationContentRect, cursor: mirroredSystemCursorType.clientNSCursor)
     }
 }
 #endif

@@ -93,9 +93,9 @@ extension MirageSampleBufferPresenter {
 
     /// Flushes and resets failed display layers, suppressing expected teardown interruptions.
     func recoverDisplayLayerIfNeeded() {
-        guard let displayLayer, displayLayer.sampleBufferRenderer.status == .failed else { return }
+        guard let displayLayer, displayLayer.mirageStatusIsFailed else { return }
         if !loggedLayerFailure {
-            let rendererError = displayLayer.sampleBufferRenderer.error
+            let rendererError = displayLayer.mirageRendererError
             if Self.isExpectedDisplayLayerFailure(rendererError) {
                 let description = rendererError?.localizedDescription ?? "unknown error"
                 MirageLogger.renderer("AVSampleBufferDisplayLayer interruption during teardown: \(description)")

@@ -16,8 +16,26 @@ Drop-in window and desktop streaming for Apple platforms. Stream a Mac to iPad, 
 
 ## Requirements
 
-- macOS 26+ for hosting, iOS 26+ / visionOS 26+ for clients
-- Swift 6.2+
+- macOS 26+ for hosting, macOS 13+ / iOS 26+ / visionOS 26+ for clients
+- Swift 6.2+ to build (macOS 13 clients are cross-compiled from a newer Mac;
+  Xcode on macOS 13 cannot compile Swift 6)
+
+### macOS 13 client backport
+
+The package's macOS floor is 13.0 so Intel Macs on Ventura can run
+`MirageKitClient`:
+
+- Client and core code genuinely run on macOS 13: `ObservableObject`-based
+  state (`MirageClientService`, `MirageClientSessionStore`,
+  `MirageStreamSessionState`), a `CVDisplayLink` presentation-pacing fallback,
+  layer-level `AVSampleBufferDisplayLayer` playback control, and bundled
+  cursor images where macOS 15 frame-resize cursors are missing.
+- Host-only code (`MirageKitHost`) still requires macOS 26 at runtime; newer
+  APIs it uses are availability-gated so the package compiles at the 13 floor.
+- Loom is vendored at `Dependencies/Loom` with its own macOS 13 backport
+  (see `Dependencies/Loom/VENDORED.md`).
+- `MirageEncoderOverrides.intelDisplayClient()` provides encoder settings
+  tuned for Intel hardware HEVC decode over Thunderbolt.
 
 ## Install
 

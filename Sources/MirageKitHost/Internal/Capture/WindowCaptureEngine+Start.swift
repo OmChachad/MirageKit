@@ -71,7 +71,7 @@ extension WindowCaptureEngine {
             excludedWindows: []
         )
 
-        streamConfig.captureResolution = .best
+        streamConfig.mirageSetBestCaptureResolution()
         streamConfig.width = currentWidth
         streamConfig.height = currentHeight
 
@@ -261,7 +261,7 @@ extension WindowCaptureEngine {
                 MirageLogger.capture("HiDPI capture: scale=\(currentScaleFactor), using explicit resolution")
             }
         } else {
-            streamConfig.captureResolution = .best
+            streamConfig.mirageSetBestCaptureResolution()
             MirageLogger.capture("HiDPI capture: scale=\(currentScaleFactor), forcing captureResolution=.best")
         }
         Self.applyCaptureGeometry(

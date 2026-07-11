@@ -107,57 +107,46 @@ public extension MirageCursorType {
             self = .dragCopy
         } else if cursorData == NSCursor.contextualMenu.image.tiffRepresentation {
             self = .contextualMenu
-        } else if cursorData == NSCursor.frameResize(position: .left, directions: .inward).image.tiffRepresentation {
-            self = .resizeRight
-        } else if cursorData == NSCursor.frameResize(position: .left, directions: .outward).image.tiffRepresentation {
-            self = .resizeLeft
-        } else if cursorData == NSCursor.frameResize(position: .right, directions: .inward).image.tiffRepresentation {
-            self = .resizeLeft
-        } else if cursorData == NSCursor.frameResize(position: .right, directions: .outward).image.tiffRepresentation {
-            self = .resizeRight
-        } else if cursorData == NSCursor.frameResize(position: .left, directions: .all).image.tiffRepresentation
-            || cursorData == NSCursor.frameResize(position: .right, directions: .all).image.tiffRepresentation {
-            self = .resizeLeftRight
-        } else if cursorData == NSCursor.frameResize(position: .top, directions: .inward).image.tiffRepresentation {
-            self = .resizeDown
-        } else if cursorData == NSCursor.frameResize(position: .top, directions: .outward).image.tiffRepresentation {
-            self = .resizeUp
-        } else if cursorData == NSCursor.frameResize(position: .bottom, directions: .inward).image.tiffRepresentation {
-            self = .resizeUp
-        } else if cursorData == NSCursor.frameResize(position: .bottom, directions: .outward).image.tiffRepresentation {
-            self = .resizeDown
-        } else if cursorData == NSCursor.frameResize(position: .top, directions: .all).image.tiffRepresentation
-            || cursorData == NSCursor.frameResize(position: .bottom, directions: .all).image.tiffRepresentation {
-            self = .resizeUpDown
-        } else if cursorData == NSCursor.frameResize(position: .topRight, directions: .inward).image.tiffRepresentation
-            || cursorData == NSCursor.frameResize(position: .topRight, directions: .outward).image
-            .tiffRepresentation {
-            self = .resizeNorthEast
-        } else if cursorData == NSCursor.frameResize(position: .topLeft, directions: .inward).image.tiffRepresentation
-            || cursorData == NSCursor.frameResize(position: .topLeft, directions: .outward).image
-            .tiffRepresentation {
-            self = .resizeNorthWest
-        } else if cursorData == NSCursor.frameResize(position: .bottomRight, directions: .inward).image
-            .tiffRepresentation
-            || cursorData == NSCursor.frameResize(position: .bottomRight, directions: .outward).image
-            .tiffRepresentation {
-            self = .resizeSouthEast
-        } else if cursorData == NSCursor.frameResize(position: .bottomLeft, directions: .inward).image
-            .tiffRepresentation
-            || cursorData == NSCursor.frameResize(position: .bottomLeft, directions: .outward).image
-            .tiffRepresentation {
-            self = .resizeSouthWest
-        } else if cursorData == NSCursor.frameResize(position: .topRight, directions: .all).image.tiffRepresentation
-            || cursorData == NSCursor.frameResize(position: .bottomLeft, directions: .all).image
-            .tiffRepresentation {
-            self = .resizeNESW
-        } else if cursorData == NSCursor.frameResize(position: .topLeft, directions: .all).image.tiffRepresentation
-            || cursorData == NSCursor.frameResize(position: .bottomRight, directions: .all).image
-            .tiffRepresentation {
-            self = .resizeNWSE
+        } else if #available(macOS 15.0, *),
+                  let frameResizeType = Self.frameResizeCursorType(matching: cursorData) {
+            self = frameResizeType
         } else {
             return nil
         }
+    }
+
+    /// Matches frame-resize cursor images, which only exist on macOS 15 and newer.
+    @available(macOS 15.0, *)
+    private static func frameResizeCursorType(matching cursorData: Data) -> MirageCursorType? {
+        let mappings: [(NSCursor, MirageCursorType)] = [
+            (.frameResize(position: .left, directions: .inward), .resizeRight),
+            (.frameResize(position: .left, directions: .outward), .resizeLeft),
+            (.frameResize(position: .right, directions: .inward), .resizeLeft),
+            (.frameResize(position: .right, directions: .outward), .resizeRight),
+            (.frameResize(position: .left, directions: .all), .resizeLeftRight),
+            (.frameResize(position: .right, directions: .all), .resizeLeftRight),
+            (.frameResize(position: .top, directions: .inward), .resizeDown),
+            (.frameResize(position: .top, directions: .outward), .resizeUp),
+            (.frameResize(position: .bottom, directions: .inward), .resizeUp),
+            (.frameResize(position: .bottom, directions: .outward), .resizeDown),
+            (.frameResize(position: .top, directions: .all), .resizeUpDown),
+            (.frameResize(position: .bottom, directions: .all), .resizeUpDown),
+            (.frameResize(position: .topRight, directions: .inward), .resizeNorthEast),
+            (.frameResize(position: .topRight, directions: .outward), .resizeNorthEast),
+            (.frameResize(position: .topLeft, directions: .inward), .resizeNorthWest),
+            (.frameResize(position: .topLeft, directions: .outward), .resizeNorthWest),
+            (.frameResize(position: .bottomRight, directions: .inward), .resizeSouthEast),
+            (.frameResize(position: .bottomRight, directions: .outward), .resizeSouthEast),
+            (.frameResize(position: .bottomLeft, directions: .inward), .resizeSouthWest),
+            (.frameResize(position: .bottomLeft, directions: .outward), .resizeSouthWest),
+            (.frameResize(position: .topRight, directions: .all), .resizeNESW),
+            (.frameResize(position: .bottomLeft, directions: .all), .resizeNESW),
+            (.frameResize(position: .topLeft, directions: .all), .resizeNWSE),
+            (.frameResize(position: .bottomRight, directions: .all), .resizeNWSE),
+        ]
+        return mappings.first { cursor, _ in
+            cursor.image.tiffRepresentation == cursorData
+        }?.1
     }
 
     /// Get the corresponding NSCursor for this cursor type.
@@ -197,18 +186,26 @@ public extension MirageCursorType {
             return .dragCopy
         case .contextualMenu:
             return .contextualMenu
-        case .resizeNorthEast:
-            return .frameResize(position: .topRight, directions: .all)
-        case .resizeNorthWest:
-            return .frameResize(position: .topLeft, directions: .all)
+        case .resizeNorthEast, .resizeNESW:
+            if #available(macOS 15.0, *) {
+                return .frameResize(position: .topRight, directions: .all)
+            }
+            return .crosshair
+        case .resizeNorthWest, .resizeNWSE:
+            if #available(macOS 15.0, *) {
+                return .frameResize(position: .topLeft, directions: .all)
+            }
+            return .crosshair
         case .resizeSouthEast:
-            return .frameResize(position: .bottomRight, directions: .all)
+            if #available(macOS 15.0, *) {
+                return .frameResize(position: .bottomRight, directions: .all)
+            }
+            return .crosshair
         case .resizeSouthWest:
-            return .frameResize(position: .bottomLeft, directions: .all)
-        case .resizeNESW:
-            return .frameResize(position: .topRight, directions: .all)
-        case .resizeNWSE:
-            return .frameResize(position: .topLeft, directions: .all)
+            if #available(macOS 15.0, *) {
+                return .frameResize(position: .bottomLeft, directions: .all)
+            }
+            return .crosshair
         }
     }
 }

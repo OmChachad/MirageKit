@@ -55,7 +55,7 @@ extension ScrollPhysicsCapturingNSView {
     }
 
     func updateLockedCursorImage() {
-        let cursor = mirroredSystemCursorType.nsCursor
+        let cursor = mirroredSystemCursorType.clientNSCursor
         lockedCursorView.image = cursor.image
         lockedCursorView.frame.size = cursor.image.size
     }

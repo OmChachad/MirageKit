@@ -276,31 +276,36 @@ actor WindowCaptureEngine {
         )
 
         let image: CGImage?
-        do {
-            image = try await withCheckedThrowingContinuation { (
-                continuation: CheckedContinuation<CGImage, Error>
-            ) in
-                SCScreenshotManager.captureImage(
-                    contentFilter: filter,
-                    configuration: screenshotConfiguration
-                ) { image, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                        return
-                    }
-                    guard let image else {
-                        continuation.resume(
-                            throwing: MirageError.protocolError(
-                                "Display startup screenshot capture returned no image"
+        if #available(macOS 14.0, *) {
+            do {
+                image = try await withCheckedThrowingContinuation { (
+                    continuation: CheckedContinuation<CGImage, Error>
+                ) in
+                    SCScreenshotManager.captureImage(
+                        contentFilter: filter,
+                        configuration: screenshotConfiguration
+                    ) { image, error in
+                        if let error {
+                            continuation.resume(throwing: error)
+                            return
+                        }
+                        guard let image else {
+                            continuation.resume(
+                                throwing: MirageError.protocolError(
+                                    "Display startup screenshot capture returned no image"
+                                )
                             )
-                        )
-                        return
+                            return
+                        }
+                        continuation.resume(returning: image)
                     }
-                    continuation.resume(returning: image)
                 }
+            } catch {
+                MirageLogger.error(.capture, error: error, message: "Failed to capture display startup screenshot: ")
+                image = nil
             }
-        } catch {
-            MirageLogger.error(.capture, error: error, message: "Failed to capture display startup screenshot: ")
+        } else {
+            // SCScreenshotManager requires macOS 14; hosts always run newer releases.
             image = nil
         }
         guard let image else {

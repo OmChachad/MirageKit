@@ -19,9 +19,21 @@ extension MirageClientService {
         let logicalResolution = MirageStreamGeometry.normalizedLogicalSize(logicalResolution)
         guard logicalResolution.width > 0, logicalResolution.height > 0 else { return nil }
 
+        // A degraded (non-Retina) stream start must not pin the whole session:
+        // when enabled and the host accepted a lower scale than this display's
+        // backing scale, window-driven resizes retry the native scale.
+        var inheritedScaleFactor = explicitDisplayScaleFactor ?? desktopStreamDisplayScaleFactor
+        if desktopResizeRestoresNativeDisplayScale,
+           explicitDisplayScaleFactor == nil,
+           let acceptedScaleFactor = inheritedScaleFactor {
+            let localScaleFactor = platformDisplayScaleFactor(explicitScaleFactor: nil)
+            if acceptedScaleFactor < localScaleFactor {
+                inheritedScaleFactor = localScaleFactor
+            }
+        }
         let displayScaleFactor = resolvedDisplayScaleFactor(
             for: logicalResolution,
-            explicitScaleFactor: explicitDisplayScaleFactor ?? desktopStreamDisplayScaleFactor
+            explicitScaleFactor: inheritedScaleFactor
         ) ?? 1.0
         let encoderMaxWidth: Int? = if let maxDrawableSize, maxDrawableSize.width > 0 {
             Int(maxDrawableSize.width.rounded(.down))

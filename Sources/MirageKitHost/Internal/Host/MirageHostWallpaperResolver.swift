@@ -111,6 +111,15 @@ enum MirageHostWallpaperResolver {
             )
         }
 
+        guard #available(macOS 14.0, *) else {
+            // SCScreenshotManager and capture info require macOS 14; hosts run newer releases.
+            return configuredDesktopImagePayload(
+                for: primaryDisplayID,
+                preferredMaxPixelWidth: preferredMaxPixelWidth,
+                preferredMaxPixelHeight: preferredMaxPixelHeight
+            )
+        }
+
         let filter = SCContentFilter(desktopIndependentWindow: wallpaperWindow)
         let captureInfo = SCShareableContent.info(for: filter)
         let pointPixelScale = max(CGFloat(captureInfo.pointPixelScale), 1)
@@ -298,6 +307,7 @@ enum MirageHostWallpaperResolver {
         )
     }
 
+    @available(macOS 14.0, *)
     private static func captureImage(
         with filter: SCContentFilter,
         targetPixelWidth: Int,

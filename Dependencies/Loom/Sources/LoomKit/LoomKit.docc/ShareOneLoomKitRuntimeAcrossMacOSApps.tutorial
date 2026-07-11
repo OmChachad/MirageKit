@@ -1,0 +1,43 @@
+@Tutorial(time: 15) {
+    @Intro(title: "Share One LoomKit Runtime Across macOS Apps") {
+        In this tutorial, you will keep the normal LoomKit container and context model while opting multiple macOS apps into one App Group-backed Loom runtime.
+
+        The architectural goal is simple: each app keeps its own app-shaped identity in the peer list, but only one shared host owns discovery, signaling presence, and authenticated sessions for the Mac.
+    }
+
+    @Section(title: "Describe the shared host at the container boundary") {
+        @ContentAndMedia {
+            Start from `LoomContainerConfiguration`, because that is still the adoption surface most apps touch first.
+        }
+
+        @Steps {
+            @Step {
+                Create a ``LoomAppGroupConfiguration`` with the App Group identifier and the current app's ``LoomAppGroupAppDescriptor``.
+                @Code(name: "StudioApp.swift", file: ShareOneLoomKitRuntimeAcrossMacOSApps-App-01.swift)
+            }
+
+            @Step {
+                Pass that shared-host configuration into `LoomContainerConfiguration`.
+                @Code(name: "StudioApp.swift", file: ShareOneLoomKitRuntimeAcrossMacOSApps-App-02.swift)
+            }
+        }
+    }
+
+    @Section(title: "Keep the SwiftUI runtime model unchanged") {
+        @ContentAndMedia {
+            Once the shared host is configured, the rest of the app should continue reading snapshots and initiating work through the same LoomKit surfaces it already uses.
+        }
+
+        @Steps {
+            @Step {
+                Inject the container normally and keep querying peers through `@LoomQuery`.
+                @Code(name: "StudioApp.swift", file: ShareOneLoomKitRuntimeAcrossMacOSApps-App-02.swift)
+            }
+
+            @Step {
+                Treat `LoomPeerSnapshot.appID` as the app-level distinction when one Mac advertises multiple participating apps through the shared host.
+                @Code(name: "PeersView.swift", file: ShareOneLoomKitRuntimeAcrossMacOSApps-PeersView-01.swift)
+            }
+        }
+    }
+}

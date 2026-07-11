@@ -1,0 +1,11 @@
+@Tutorials(name: "LoomHost Tutorials") {
+    @Intro(title: "Share One Loom Runtime Across macOS Apps") {
+        These tutorials cover the App Group-scoped runtime layer that lets multiple Loom-based macOS apps behave like one host on the network.
+    }
+
+    @Chapter(name: "Shared Host Runtime") {
+        Configure one App Group, describe each participating app, and opt a LoomKit container into the shared host.
+
+        @TutorialReference(tutorial: "doc:ShareAMacHostAcrossApps")
+    }
+}

@@ -203,6 +203,12 @@ extension MirageClientService {
                 presentationSize: presentationSize
             )
             updateDesktopVisibleBounds(from: started, clearsMissingBounds: true)
+            if desktopResizeRestoresNativeDisplayScale {
+                desktopResizeCoordinator.reconcileLastSentTarget(
+                    acceptedLogicalResolution: presentationSize,
+                    acceptedDisplayScaleFactor: desktopStreamDisplayScaleFactor
+                )
+            }
             desktopResizeCoordinator.clearQueuedTargetsMatchingAcceptedStreamGeometry(
                 logicalResolution: presentationSize,
                 displayPixelSize: acceptedDisplayPixelSize

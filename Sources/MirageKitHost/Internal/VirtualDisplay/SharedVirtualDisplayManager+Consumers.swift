@@ -319,6 +319,14 @@ extension SharedVirtualDisplayManager {
         durationSeconds: Double = 0.35
     ) async -> VirtualDisplayCadenceValidation {
         let targetFPS = Double(max(1, targetFrameRate))
+        guard #available(macOS 14.0, *) else {
+            // Screen display links require macOS 14; hosts always run newer releases.
+            return VirtualDisplayCadenceValidation(
+                targetFPS: targetFPS,
+                observedFPS: nil,
+                usesNativeDisplayCadence: false
+            )
+        }
         let cadenceProbe: VirtualDisplayCadenceProbe? = await MainActor.run(body: {
             guard let cadenceProbe = VirtualDisplayCadenceProbe(displayID: snapshot.displayID),
                   cadenceProbe.start() else {

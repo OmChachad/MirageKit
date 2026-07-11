@@ -14,7 +14,7 @@ extension WindowCaptureEngine {
     func applyResolutionSettings(to streamConfig: SCStreamConfiguration) {
         switch captureMode {
         case .window:
-            streamConfig.captureResolution = .best
+            streamConfig.mirageSetBestCaptureResolution()
             streamConfig.width = currentWidth
             streamConfig.height = currentHeight
         case .display:
@@ -22,10 +22,10 @@ extension WindowCaptureEngine {
                 streamConfig.width = currentWidth
                 streamConfig.height = currentHeight
             } else {
-                streamConfig.captureResolution = .best
+                streamConfig.mirageSetBestCaptureResolution()
             }
         case nil:
-            streamConfig.captureResolution = .best
+            streamConfig.mirageSetBestCaptureResolution()
             streamConfig.width = currentWidth
             streamConfig.height = currentHeight
         }
@@ -58,7 +58,7 @@ extension WindowCaptureEngine {
     ) -> SCStreamConfiguration {
         let streamConfig = SCStreamConfiguration()
         if useBestCaptureResolution {
-            streamConfig.captureResolution = .best
+            streamConfig.mirageSetBestCaptureResolution()
         }
         if let width, let height {
             streamConfig.width = width

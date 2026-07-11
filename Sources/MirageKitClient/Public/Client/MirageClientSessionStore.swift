@@ -6,30 +6,27 @@
 //
 
 import Foundation
-import Observation
 import MirageKit
 
 /// Manages active client stream sessions, readiness state, and presentation tiers.
-@Observable
 @MainActor
-public final class MirageClientSessionStore {
+public final class MirageClientSessionStore: ObservableObject {
     // MARK: - Stream Sessions
 
     /// Active stream sessions by session ID.
-    @ObservationIgnored
     var streamSessions: [StreamSessionID: MirageStreamSessionState] = [:]
     /// Monotonic token that changes when the session dictionary shape changes.
-    public private(set) var sessionRevision: UInt64 = 0
+    @Published public private(set) var sessionRevision: UInt64 = 0
 
     /// Minimum window sizes per session (observable for resize completion detection).
-    public var sessionMinSizes: [StreamSessionID: CGSize] = [:]
+    @Published public var sessionMinSizes: [StreamSessionID: CGSize] = [:]
 
     /// Monotonic min-size update generation per session.
     /// Increments for every host min-size update, including no-op value repeats.
-    public var sessionMinSizeUpdateGenerations: [StreamSessionID: UInt64] = [:]
+    @Published public var sessionMinSizeUpdateGenerations: [StreamSessionID: UInt64] = [:]
 
     /// Current stream presentation tier map.
-    public var presentationTierByStreamID: [StreamID: StreamPresentationTier] = [:]
+    @Published public var presentationTierByStreamID: [StreamID: StreamPresentationTier] = [:]
 
     /// Callback when stream presentation tier changes.
     public var onStreamPresentationTierChanged: ((StreamID, StreamPresentationTier) -> Void)?
@@ -39,7 +36,7 @@ public final class MirageClientSessionStore {
     /// Streams that presented a frame before the session entry existed.
     var pendingFirstPresentedFrameStreamIDs: Set<StreamID> = []
     /// Streams currently waiting for the first presented frame after a desktop resize reset.
-    public var postResizeAwaitingFirstFrameStreamIDs: Set<StreamID> = []
+    @Published public var postResizeAwaitingFirstFrameStreamIDs: Set<StreamID> = []
     /// Recovery states reported before a session entry existed.
     var pendingClientRecoveryStatusByStreamID: [StreamID: MirageStreamClientRecoveryStatus] = [:]
     /// Recovery causes reported before a session entry existed.
@@ -48,7 +45,7 @@ public final class MirageClientSessionStore {
     // MARK: - Focus State
 
     /// The currently focused stream session (receives input).
-    public var focusedSessionID: StreamSessionID?
+    @Published public var focusedSessionID: StreamSessionID?
 
     // MARK: - Dependencies
 
@@ -348,7 +345,8 @@ public final class MirageClientSessionStore {
     }
 
     private func observeStreamSessions() {
-        // Reading the revision makes the @ObservationIgnored session dictionary observable.
+        // Reading the revision kept the session dictionary observable under Observation.
+        // With ObservableObject, invalidation happens via the @Published revision itself.
         _ = sessionRevision
     }
 

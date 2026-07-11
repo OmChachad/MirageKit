@@ -77,8 +77,26 @@ public struct MirageDesktopCursorPresentation: Codable, Equatable, Sendable, Has
     }
 
     /// Whether the host needs to send cursor position updates for this presentation mode.
+    ///
+    /// With the host cursor captured inside the stream image, position echo is
+    /// only needed when Lock Client Cursor keeps the local pointer aligned.
     public var requiresCursorPositionUpdates: Bool {
-        source != .simulated
+        switch source {
+        case .simulated:
+            false
+        case .client:
+            true
+        case .host:
+            lockClientCursorWhenUsingHostCursor
+        }
+    }
+
+    /// Whether the host needs to send cursor shape/visibility updates for this presentation mode.
+    ///
+    /// When the real host cursor is captured inside the stream image and the
+    /// client cursor is not locked, shape sync is dead traffic for desktop streams.
+    public var requiresCursorShapeUpdates: Bool {
+        source != .host || lockClientCursorWhenUsingHostCursor
     }
 
     /// Whether the client should hide its local system cursor while streaming.

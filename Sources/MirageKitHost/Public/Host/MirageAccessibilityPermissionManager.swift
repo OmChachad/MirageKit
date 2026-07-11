@@ -9,14 +9,12 @@ import MirageKit
 #if os(macOS)
 @preconcurrency import ApplicationServices
 import Foundation
-import Observation
 
 /// Tracks macOS Accessibility permission state for host input injection UI.
-@Observable
 @MainActor
-public final class MirageAccessibilityPermissionManager {
+public final class MirageAccessibilityPermissionManager: ObservableObject {
     /// Current cached permission state.
-    public private(set) var isAccessibilityGranted = false
+    @Published public private(set) var isAccessibilityGranted = false
 
     /// Whether the system prompt has been requested in this process.
     private var hasPromptedThisSession = false

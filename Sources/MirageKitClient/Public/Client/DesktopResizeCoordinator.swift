@@ -8,11 +8,9 @@
 import CoreGraphics
 import Foundation
 import MirageKit
-import Observation
 
-@Observable
 @MainActor
-final class DesktopResizeCoordinator {
+final class DesktopResizeCoordinator: ObservableObject {
     enum DispatchPolicy: Equatable {
         case startup
         case immediate
@@ -192,9 +190,9 @@ final class DesktopResizeCoordinator {
         let target: RequestGeometry
     }
 
-    var resizeLifecycleState: DesktopResizeLifecycleState = .active
-    var isResizing = false
-    var maskActive = false
+    @Published var resizeLifecycleState: DesktopResizeLifecycleState = .active
+    @Published var isResizing = false
+    @Published var maskActive = false
     var latestContainerDisplaySize: CGSize = .zero
     var latestDrawableViewSize: CGSize = .zero
     var latestRequestedTarget: RequestGeometry?
@@ -204,9 +202,9 @@ final class DesktopResizeCoordinator {
     var lastSentTarget: RequestGeometry?
     var lastSentTransition: ActiveTransition?
     var activeTransition: ActiveTransition?
-    @ObservationIgnored var displayResolutionTask: Task<Void, Never>?
-    @ObservationIgnored var resizeHoldoffTask: Task<Void, Never>?
-    @ObservationIgnored var presentationMaskTimeoutTask: Task<Void, Never>?
+    var displayResolutionTask: Task<Void, Never>?
+    var resizeHoldoffTask: Task<Void, Never>?
+    var presentationMaskTimeoutTask: Task<Void, Never>?
 
     func beginTransition(streamID: StreamID, transitionID: UUID, target: RequestGeometry) {
         let transition = ActiveTransition(streamID: streamID, transitionID: transitionID, target: target)
@@ -219,6 +217,33 @@ final class DesktopResizeCoordinator {
         latestRequestedDispatchPolicy = nil
         isResizing = true
         maskActive = true
+    }
+
+    /// Reconciles the last sent target with the host-accepted geometry so a
+    /// degraded acceptance (for example a non-Retina virtual-display fallback)
+    /// does not make future native-scale resize requests look redundant.
+    func reconcileLastSentTarget(
+        acceptedLogicalResolution: CGSize,
+        acceptedDisplayScaleFactor: CGFloat?
+    ) {
+        guard let lastSent = lastSentTarget,
+              let acceptedDisplayScaleFactor,
+              acceptedDisplayScaleFactor > 0,
+              acceptedLogicalResolution.width > 0,
+              acceptedLogicalResolution.height > 0,
+              abs(lastSent.displayScaleFactor - acceptedDisplayScaleFactor) > 0.01 else {
+            return
+        }
+        lastSentTarget = RequestGeometry(
+            sceneIdentity: lastSent.sceneIdentity,
+            refreshTargetHz: lastSent.refreshTargetHz,
+            logicalResolution: acceptedLogicalResolution,
+            displayScaleFactor: acceptedDisplayScaleFactor,
+            requestedStreamScale: lastSent.requestedStreamScale,
+            encoderMaxWidth: lastSent.encoderMaxWidth,
+            encoderMaxHeight: lastSent.encoderMaxHeight,
+            disableResolutionCap: lastSent.disableResolutionCap
+        )
     }
 
     func queueLatestTarget(

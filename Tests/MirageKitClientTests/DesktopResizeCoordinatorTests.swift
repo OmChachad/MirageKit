@@ -109,6 +109,26 @@ struct DesktopResizeCoordinatorTests {
         #expect(target.displayPixelSize == CGSize(width: 1200, height: 800))
     }
 
+    @Test("Desktop resize target restores native display scale when enabled")
+    func desktopResizeTargetRestoresNativeDisplayScaleWhenEnabled() throws {
+        let service = MirageClientService()
+        service.desktopStreamDisplayScaleFactor = 1.0
+        service.desktopResizeRestoresNativeDisplayScale = true
+
+        let target = try #require(
+            service.desktopResizeTarget(
+                for: CGSize(width: 1200, height: 800),
+                maxDrawableSize: nil
+            )
+        )
+
+        // The retry never lowers the accepted scale; on a Retina machine it
+        // restores the local backing scale after a degraded 1x acceptance.
+        let localScaleFactor = service.platformDisplayScaleFactor(explicitScaleFactor: nil)
+        #expect(target.displayScaleFactor == max(1.0, localScaleFactor))
+        #expect(target.logicalResolution == CGSize(width: 1200, height: 800))
+    }
+
     @Test("Contract equality ignores raw stream scale when resolved geometry matches")
     func contractEqualityIgnoresRawStreamScaleWhenResolvedGeometryMatches() {
         let startup = DesktopResizeCoordinator.RequestGeometry(

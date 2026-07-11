@@ -13,6 +13,7 @@ import QuartzCore
 #if os(macOS)
 
 /// Measures callback cadence for a virtual display using a screen display link.
+@available(macOS 14.0, *)
 @MainActor
 final class VirtualDisplayCadenceProbe: NSObject, @unchecked Sendable {
     private let displayID: CGDirectDisplayID

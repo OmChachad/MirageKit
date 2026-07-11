@@ -30,56 +30,56 @@ private extension MirageStreamContentView {
 
     var streamContentWithSessionObservers: some View {
         streamContentWithReadinessOverlay
-            .onChange(of: sessionStore.sessionMinSizes[session.id]) {
+            .mirageOnChange(of: sessionStore.sessionMinSizes[session.id]) {
                 scheduleResizeAcknowledgementHandlingIfNeeded()
             }
-            .onChange(of: sessionStore.sessionMinSizeUpdateGenerations[session.id]) {
+            .mirageOnChange(of: sessionStore.sessionMinSizeUpdateGenerations[session.id]) {
                 scheduleResizeAcknowledgementHandlingIfNeeded()
             }
-            .onChange(of: appStreamStartAcknowledgement) {
+            .mirageOnChange(of: appStreamStartAcknowledgement) {
                 scheduleAppStreamStartAcknowledgementHandling()
             }
-            .onChange(of: appWindowResizeResult) {
+            .mirageOnChange(of: appWindowResizeResult) {
                 handleAppWindowResizeResult(appWindowResizeResult)
             }
-            .onChange(of: awaitingPostResizeFirstFrame) {
+            .mirageOnChange(of: awaitingPostResizeFirstFrame) {
                 handleAwaitingPostResizeFirstFrameChanged()
             }
-            .onChange(of: session.hasPresentedFrame) {
+            .mirageOnChange(of: session.hasPresentedFrame) {
                 handleSessionHasPresentedFrameChanged()
             }
-            .onChange(of: session.clientRecoveryStatus) {
+            .mirageOnChange(of: session.clientRecoveryStatus) {
                 handleClientRecoveryStatusChanged()
             }
-            .onChange(of: rawPresentationBlurRadius) {
+            .mirageOnChange(of: rawPresentationBlurRadius) {
                 handlePresentationBlurRadiusChanged()
             }
     }
 
     var streamContentWithInputAndPresentationObservers: some View {
         streamContentWithSessionObservers
-            .onChange(of: inputEnabled) {
+            .mirageOnChange(of: inputEnabled) {
                 handleInputEnabledChanged()
             }
-            .onChange(of: localPresentationPauseActive) {
+            .mirageOnChange(of: localPresentationPauseActive) {
                 handleLocalPresentationPauseChanged()
             }
-            .onChange(of: keyboardAvoidanceEnabled) {
+            .mirageOnChange(of: keyboardAvoidanceEnabled) {
                 handleKeyboardAvoidancePresentationStateChanged()
             }
-            .onChange(of: softwareKeyboardVisible) {
+            .mirageOnChange(of: softwareKeyboardVisible) {
                 handleKeyboardAvoidancePresentationStateChanged()
             }
-            .onChange(of: localKeyboardOcclusionActive) {
+            .mirageOnChange(of: localKeyboardOcclusionActive) {
                 handleKeyboardAvoidancePresentationStateChanged()
             }
-            .onChange(of: maxDrawableSize) {
+            .mirageOnChange(of: maxDrawableSize) {
                 scheduleDesktopResizeForCurrentMetricsChangeIfNeeded()
             }
-            .onChange(of: useHostResolution) {
+            .mirageOnChange(of: useHostResolution) {
                 scheduleDesktopResizeForCurrentMetricsChangeIfNeeded()
             }
-            .onChange(of: isCurrentStreamActive) {
+            .mirageOnChange(of: isCurrentStreamActive) {
                 scheduleFocusedInputCorrectionIfNeeded()
             }
     }
